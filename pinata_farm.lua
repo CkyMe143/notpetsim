@@ -5,13 +5,13 @@ if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
 local sf=Instance.new("ScreenGui",CG)sf.Name="AFK_Saver_UI"sf.ResetOnSpawn=false
 local bg=Instance.new("Frame",sf)bg.Size=UDim2.new(1,0,1,0)bg.BackgroundColor3=Color3.fromRGB(0,0,0)bg.BorderSizePixel=0
-local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Bypassing Map & Teleporting..."
+local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Bypassing Map & Teleporting Area 99..."
 
 local btn=Instance.new("TextButton",bg)btn.Size=UDim2.new(0,140,0,45)btn.Position=UDim2.new(0.5,-70,0.82,0)btn.BackgroundColor3=Color3.fromRGB(40,40,40)btn.TextColor3=Color3.fromRGB(255,255,255)btn.Font=Enum.Font.Code;btn.TextSize=16;btn.Text="Show Game"Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
 
 local miniGui=Instance.new("ScreenGui",CG)miniGui.Name="AFK_Toggle_Btn"miniGui.ResetOnSpawn=false
 local miniBtn=Instance.new("TextButton",miniGui)miniBtn.Size=UDim2.new(0,120,0,45)
-miniBtn.Position=UDim2.new(0.5,-60,0.5,-22)
+miniBtn.Position=UDim2.new(0.5,-60,0.5,-22) -- Keeps button in the middle
 miniBtn.BackgroundColor3=Color3.fromRGB(30,30,30)miniBtn.TextColor3=Color3.fromRGB(0,255,100)miniBtn.Font=Enum.Font.Code;miniBtn.TextSize=14;miniBtn.Text="[ Optimize ]"miniBtn.Visible=false;Instance.new("UICorner",miniBtn).CornerRadius=UDim.new(0,6)
 
 btn.MouseButton1Click:Connect(function()
@@ -32,6 +32,7 @@ end)
 
 pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)end)
 
+-- FIXED TELEPORT LOGIC: FORCES POSITION AT AREA 99 (RAINBOW ROAD)
 task.spawn(function()
     local targetZone = nil local mapFolder = workspace:FindFirstChild("Map") or workspace:WaitForChild("Map", 8)
     if mapFolder then for _, z in ipairs(mapFolder:GetChildren()) do if z.Name:match("^99%s*|") or z.Name:match("Rainbow Road") then targetZone = z break end end end
@@ -62,7 +63,7 @@ task.spawn(function()
         local h,m,s=math.floor(el/3600),math.floor((el%3600)/60),el%60
         local cP,cL,cG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")
         
-        -- UI Text now completely excludes Gems
+        -- Screen clean: Gems completely removed
         txt.Text=string.format("[%02d:%02d:%02d]\n\n- Inventory -\nPinatas: %d\nLarge Bags: %d\nGift Bags: %d\n\n- Rates -\nPinatas: %.1f/m\nLarge Bags: %.1f/m\nGift Bags: %.1f/m",h,m,s,cP,cL,cG,((sP-cP)/se)*60,((cL-sL)/se)*60,((cG-sG)/se)*60)
     end
 end)
@@ -70,17 +71,36 @@ end)
 pcall(function()LP.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled=false end)
 LP.Idled:Connect(function()VU:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)task.wait(0.5)VU:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)end)
 
--- INTEGRATED WORKING AUTO-COLLECT ORBS AND LOOTBAGS
-workspace.__THINGS:FindFirstChild("Lootbags").ChildAdded:Connect(function(l)
-    if l then pcall(function() Net.Fire("Lootbags_Claim", { l.Name }) end) end
-end)
-
-pcall(function()
-    Net.Fired("Orbs: Create"):Connect(function(t)
-        local o = {}
-        for _, v in ipairs(t) do table.insert(o, v.id) end
-        Net.Fire("Orbs: Collect", o)
-    end)
+-- HIGH-FREQUENCY SPAM COLLECTOR FOR ORBS & LOOTBAGS
+task.spawn(function()
+    local things = workspace:WaitForChild("__THINGS")
+    local orbsContainer = things:WaitForChild("Orbs")
+    local lootbagsContainer = things:WaitForChild("Lootbags")
+    
+    while task.wait(0.1) do
+        pcall(function()
+            local currentOrbs = orbsContainer:GetChildren()
+            if #currentOrbs > 0 then
+                local list = {}
+                for i=1, #currentOrbs do
+                    table.insert(list, currentOrbs[i].Name)
+                    if i % 30 == 0 then
+                        Net.Fire("Orbs: Collect", list)
+                        list = {}
+                    end
+                end
+                if #list > 0 then Net.Fire("Orbs: Collect", list) end
+            end
+            
+            local currentBags = lootbagsContainer:GetChildren()
+            if #currentBags > 0 then
+                for i=1, #currentBags do
+                    Net.Fire("Lootbags_Claim", {currentBags[i].Name})
+                end
+            end
+            pcall(function() Net.Fire("Orbs: Collect", {}) end)
+        end)
+    end
 end)
 
 pcall(function()hookfunction(require(Cl.PlayerPet).CalculateSpeedMultiplier,function()return 9999 end)end)
