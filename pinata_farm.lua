@@ -1,19 +1,43 @@
 local RS,VU,LP,CG=game:GetService("ReplicatedStorage"),game:GetService("VirtualUser"),game.Players.LocalPlayer,game:GetService("CoreGui")
 local sf=CG:FindFirstChild("AFK_Saver_UI") or Instance.new("ScreenGui",CG)sf.Name="AFK_Saver_UI"sf.ResetOnSpawn=false
 local bg=Instance.new("Frame",sf)bg.Size=UDim2.new(1,0,1,0)bg.BackgroundColor3=Color3.fromRGB(0,0,0)bg.BorderSizePixel=0
-local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Teleporting & Loading..."
+local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Bypassing Map & Teleporting..."
 local btn=Instance.new("TextButton",bg)btn.Size=UDim2.new(0,140,0,45)btn.Position=UDim2.new(0.5,-70,0.82,0)btn.BackgroundColor3=Color3.fromRGB(40,40,40)btn.TextColor3=Color3.fromRGB(255,255,255)btn.Font=Enum.Font.Code;btn.TextSize=16;btn.Text="Show Game"Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
 btn.MouseButton1Click:Connect(function()pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(true)sf:Destroy()end)end)
 pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)end)
 
--- AREA 99 TELEPORT SYSTEM
+-- SMART UNIVERSAL TELEPORT FOR AREA 99
 task.spawn(function()
-    local a99 = workspace:WaitForChild("Map",10) and workspace.Map:WaitForChild("99 | Rainbow Road", 10)
-    local pPart = a99 and (a99:FindFirstChild("PERSISTENT") or a99:FindFirstChild("Teleport") or a99:FindFirstChildWhichIsA("BasePart"))
-    for i=1, 20 do
-        local c = LP.Character local h = c and c:FindFirstChild("HumanoidRootPart")
-        if h and pPart then h.CFrame = pPart.CFrame + Vector3.new(0,5,0) break end
-        task.wait(0.5)
+    local targetZone = nil
+    -- Scan the map folder safely for zone 99 regardless of its naming structure
+    local mapFolder = workspace:FindFirstChild("Map") or workspace:WaitForChild("Map", 8)
+    if mapFolder then
+        for _, z in ipairs(mapFolder:GetChildren()) do
+            if z.Name:match("^99%s*|") or z.Name:match("Rainbow Road") then
+                targetZone = z
+                break
+            end
+        end
+    end
+    -- Fallback: Look for anything tagged with ID 99 inside the breakables boundaries
+    if not targetZone and workspace:FindFirstChild("__THINGS") then
+        local bounds = workspace.__THINGS:FindFirstChild("BreakableZones")
+        if bounds then
+            for _, b in ipairs(bounds:GetChildren()) do
+                if b.Name:match("^99") then targetZone = b break end
+            end
+        end
+    end
+    -- Execute teleportation loop directly over target location
+    if targetZone then
+        local targetCFrame = targetZone:GetAttribute("Center") or (targetZone:IsA("BasePart") and targetZone.CFrame) or targetZone:FindFirstChildWhichIsA("BasePart", true).CFrame
+        if targetCFrame then
+            for i = 1, 15 do
+                local c = LP.Character local h = c and c:FindFirstChild("HumanoidRootPart")
+                if h then h.CFrame = targetCFrame + Vector3.new(0, 4, 0) break end
+                task.wait(0.5)
+            end
+        end
     end
 end)
 
@@ -41,17 +65,21 @@ end)
 pcall(function()LP.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled=false end)
 LP.Idled:Connect(function()VU:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)task.wait(0.5)VU:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)end)
 
--- FIX: ROBUST REWRITTEN AUTO COLLECT LOOTBAGS & ORBS
-workspace.__THINGS.Lootbags.ChildAdded:Connect(function(l)
-    if l then task.wait(0.1)pcall(function() Net.Fire("Lootbags_Claim",{l.Name}) end) end
+-- FIXED PACKET HANDLING MOBILE ORB AND LOOTBAG AUTOCOLLECT
+local lootbagsContainer = workspace.__THINGS:WaitForChild("Lootbags")
+lootbagsContainer.ChildAdded:Connect(function(l)
+    if l then task.wait(0.15) pcall(function() Net.Fire("Lootbags_Claim", {l.Name}) end) end
 end)
-workspace.__THINGS.Orbs.ChildAdded:Connect(function(o)
-    if o then pcall(function() Net.Fire("Orbs: Collect", {o.Name}) end) end
+
+local orbsContainer = workspace.__THINGS:WaitForChild("Orbs")
+orbsContainer.ChildAdded:Connect(function(o)
+    if o then task.wait(0.05) pcall(function() Net.Fire("Orbs: Collect", {o.Name}) end) end
 end)
+
 pcall(function()
     Net.Fired("Orbs: Create"):Connect(function(t)
         local o={} for _,v in ipairs(t) do table.insert(o, v.id or v[1]) end
-        pcall(function() Net.Fire("Orbs: Collect", o) end)
+        task.wait(0.1) pcall(function() Net.Fire("Orbs: Collect", o) end)
     end)
 end)
 
