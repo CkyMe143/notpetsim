@@ -9,10 +9,9 @@ local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=
 
 local btn=Instance.new("TextButton",bg)btn.Size=UDim2.new(0,140,0,45)btn.Position=UDim2.new(0.5,-70,0.82,0)btn.BackgroundColor3=Color3.fromRGB(40,40,40)btn.TextColor3=Color3.fromRGB(255,255,255)btn.Font=Enum.Font.Code;btn.TextSize=16;btn.Text="Show Game"Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
 
--- MOVED OPTIMIZE BUTTON TO THE DEAD CENTER
 local miniGui=Instance.new("ScreenGui",CG)miniGui.Name="AFK_Toggle_Btn"miniGui.ResetOnSpawn=false
 local miniBtn=Instance.new("TextButton",miniGui)miniBtn.Size=UDim2.new(0,120,0,45)
-miniBtn.Position=UDim2.new(0.5,-60,0.5,-22) -- Dead Center Alignment
+miniBtn.Position=UDim2.new(0.5,-60,0.5,-22)
 miniBtn.BackgroundColor3=Color3.fromRGB(30,30,30)miniBtn.TextColor3=Color3.fromRGB(0,255,100)miniBtn.Font=Enum.Font.Code;miniBtn.TextSize=14;miniBtn.Text="[ Optimize ]"miniBtn.Visible=false;Instance.new("UICorner",miniBtn).CornerRadius=UDim.new(0,6)
 
 btn.MouseButton1Click:Connect(function()
@@ -61,41 +60,27 @@ task.spawn(function()
         if not bSet then sP,sL,sG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")bSet=(sP>0 or sL>0 or sG>0)end
         local el=os.time()-st local se=el>0 and el or 1
         local h,m,s=math.floor(el/3600),math.floor((el%3600)/60),el%60
-        local _,d=pcall(Save.Get)local g=(d and d.Inventory and d.Inventory.Diamonds)or 0
-        local fG=g>=1e6 and string.format("%.2fm",g/1e6) or tostring(g)
         local cP,cL,cG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")
-        txt.Text=string.format("[%02d:%02d:%02d]\nGems: %s\n\n- Inventory -\nPinatas: %d\nLarge Bags: %d\nGift Bags: %d\n\n- Rates -\nPinatas: %.1f/m\nLarge Bags: %.1f/m\nGift Bags: %.1f/m",h,m,s,fG,cP,cL,cG,((sP-cP)/se)*60,((cL-sL)/se)*60,((cG-sG)/se)*60)
+        
+        -- UI Text now completely excludes Gems
+        txt.Text=string.format("[%02d:%02d:%02d]\n\n- Inventory -\nPinatas: %d\nLarge Bags: %d\nGift Bags: %d\n\n- Rates -\nPinatas: %.1f/m\nLarge Bags: %.1f/m\nGift Bags: %.1f/m",h,m,s,cP,cL,cG,((sP-cP)/se)*60,((cL-sL)/se)*60,((cG-sG)/se)*60)
     end
 end)
 
 pcall(function()LP.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled=false end)
 LP.Idled:Connect(function()VU:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)task.wait(0.5)VU:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)end)
 
--- FIX: BRUTE-FORCE DIRECT SCANNING LOOP FOR ORBS & LOOTBAGS
-task.spawn(function()
-    local things = workspace:WaitForChild("__THINGS")
-    local orbs = things:WaitForChild("Orbs")
-    local bags = things:WaitForChild("Lootbags")
-    
-    while task.wait(0.1) do
-        -- Direct Orb Collection
-        local activeOrbs = orbs:GetChildren()
-        if #activeOrbs > 0 then
-            local orbList = {}
-            for i = 1, #activeOrbs do
-                table.insert(orbList, activeOrbs[i].Name)
-            end
-            pcall(function() Net.Fire("Orbs: Collect", orbList) end)
-        end
-        
-        -- Direct Lootbag Collection
-        local activeBags = bags:GetChildren()
-        if #activeBags > 0 then
-            for i = 1, #activeBags do
-                pcall(function() Net.Fire("Lootbags_Claim", {activeBags[i].Name}) end)
-            end
-        end
-    end
+-- INTEGRATED WORKING AUTO-COLLECT ORBS AND LOOTBAGS
+workspace.__THINGS:FindFirstChild("Lootbags").ChildAdded:Connect(function(l)
+    if l then pcall(function() Net.Fire("Lootbags_Claim", { l.Name }) end) end
+end)
+
+pcall(function()
+    Net.Fired("Orbs: Create"):Connect(function(t)
+        local o = {}
+        for _, v in ipairs(t) do table.insert(o, v.id) end
+        Net.Fire("Orbs: Collect", o)
+    end)
 end)
 
 pcall(function()hookfunction(require(Cl.PlayerPet).CalculateSpeedMultiplier,function()return 9999 end)end)
