@@ -5,13 +5,13 @@ if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
 local sf=Instance.new("ScreenGui",CG)sf.Name="AFK_Saver_UI"sf.ResetOnSpawn=false
 local bg=Instance.new("Frame",sf)bg.Size=UDim2.new(1,0,1,0)bg.BackgroundColor3=Color3.fromRGB(0,0,0)bg.BorderSizePixel=0
-local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Bypassing Map & Teleporting Area 99..."
+local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Bypassing Map & Teleporting to Coordinates..."
 
 local btn=Instance.new("TextButton",bg)btn.Size=UDim2.new(0,140,0,45)btn.Position=UDim2.new(0.5,-70,0.82,0)btn.BackgroundColor3=Color3.fromRGB(40,40,40)btn.TextColor3=Color3.fromRGB(255,255,255)btn.Font=Enum.Font.Code;btn.TextSize=16;btn.Text="Show Game"Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
 
 local miniGui=Instance.new("ScreenGui",CG)miniGui.Name="AFK_Toggle_Btn"miniGui.ResetOnSpawn=false
 local miniBtn=Instance.new("TextButton",miniGui)miniBtn.Size=UDim2.new(0,120,0,45)
-miniBtn.Position=UDim2.new(0.5,-60,0.5,-22) -- Keeps button in the middle
+miniBtn.Position=UDim2.new(0.5,-60,0.5,-22)
 miniBtn.BackgroundColor3=Color3.fromRGB(30,30,30)miniBtn.TextColor3=Color3.fromRGB(0,255,100)miniBtn.Font=Enum.Font.Code;miniBtn.TextSize=14;miniBtn.Text="[ Optimize ]"miniBtn.Visible=false;Instance.new("UICorner",miniBtn).CornerRadius=UDim.new(0,6)
 
 btn.MouseButton1Click:Connect(function()
@@ -32,17 +32,17 @@ end)
 
 pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)end)
 
--- FIXED TELEPORT LOGIC: FORCES POSITION AT AREA 99 (RAINBOW ROAD)
+-- HARDCODED INTEGER TELEPORT COORDINATES WITH IDENTITY ROTATION
 task.spawn(function()
-    local targetZone = nil local mapFolder = workspace:FindFirstChild("Map") or workspace:WaitForChild("Map", 8)
-    if mapFolder then for _, z in ipairs(mapFolder:GetChildren()) do if z.Name:match("^99%s*|") or z.Name:match("Rainbow Road") then targetZone = z break end end end
-    if not targetZone and workspace:FindFirstChild("__THINGS") then
-        local bounds = workspace.__THINGS:FindFirstChild("BreakableZones")
-        if bounds then for _, b in ipairs(bounds:GetChildren()) do if b.Name:match("^99") then targetZone = b break end end end
-    end
-    if targetZone then
-        local targetCFrame = targetZone:GetAttribute("Center") or (targetZone:IsA("BasePart") and targetZone.CFrame) or targetZone:FindFirstChildWhichIsA("BasePart", true).CFrame
-        if targetCFrame then for i = 1, 15 do local c = LP.Character local h = c and c:FindFirstChild("HumanoidRootPart") if h then h.CFrame = targetCFrame + Vector3.new(0, 4, 0) break end task.wait(0.5) end end
+    local targetCFrame = CFrame.new(-60, 161, 6431, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+    for i = 1, 15 do 
+        local c = LP.Character 
+        local h = c and c:FindFirstChild("HumanoidRootPart") 
+        if h then 
+            h.CFrame = targetCFrame 
+            break 
+        end 
+        task.wait(0.5) 
     end
 end)
 
@@ -63,7 +63,6 @@ task.spawn(function()
         local h,m,s=math.floor(el/3600),math.floor((el%3600)/60),el%60
         local cP,cL,cG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")
         
-        -- Screen clean: Gems completely removed
         txt.Text=string.format("[%02d:%02d:%02d]\n\n- Inventory -\nPinatas: %d\nLarge Bags: %d\nGift Bags: %d\n\n- Rates -\nPinatas: %.1f/m\nLarge Bags: %.1f/m\nGift Bags: %.1f/m",h,m,s,cP,cL,cG,((sP-cP)/se)*60,((cL-sL)/se)*60,((cG-sG)/se)*60)
     end
 end)
