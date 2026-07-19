@@ -1,241 +1,83 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local VirtualUser = game:GetService("VirtualUser")
-local LocalPlayer = game.Players.LocalPlayer
-local CoreGui = game:GetService("CoreGui")
+local RS,VU,LP,CG=game:GetService("ReplicatedStorage"),game:GetService("VirtualUser"),game.Players.LocalPlayer,game:GetService("CoreGui")
+local sf=CG:FindFirstChild("AFK_Saver_UI") or Instance.new("ScreenGui",CG)sf.Name="AFK_Saver_UI"sf.ResetOnSpawn=false
+local bg=Instance.new("Frame",sf)bg.Size=UDim2.new(1,0,1,0)bg.BackgroundColor3=Color3.fromRGB(0,0,0)bg.BorderSizePixel=0
+local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Teleporting & Loading..."
+local btn=Instance.new("TextButton",bg)btn.Size=UDim2.new(0,140,0,45)btn.Position=UDim2.new(0.5,-70,0.82,0)btn.BackgroundColor3=Color3.fromRGB(40,40,40)btn.TextColor3=Color3.fromRGB(255,255,255)btn.Font=Enum.Font.Code;btn.TextSize=16;btn.Text="Show Game"Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
+btn.MouseButton1Click:Connect(function()pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(true)sf:Destroy()end)end)
+pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)end)
 
--- ==========================================
--- EMERGENCY MOBILE UI INITIALIZATION
--- ==========================================
--- We create the UI immediately before ANYTHING else so you know the script ran.
-local sfGui = CoreGui:FindFirstChild("AFK_Saver_UI")
-if sfGui then sfGui:Destroy() end
-
-sfGui = Instance.new("ScreenGui")
-sfGui.Name = "AFK_Saver_UI"
-sfGui.ResetOnSpawn = false
-sfGui.Parent = CoreGui
-
-local bg = Instance.new("Frame")
-bg.Size = UDim2.new(1, 0, 1, 0)
-bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-bg.BorderSizePixel = 0
-bg.Parent = sfGui
-
-local infoText = Instance.new("TextLabel")
-infoText.Size = UDim2.new(1, 0, 0.6, 0)
-infoText.Position = UDim2.new(0, 0, 0.15, 0)
-infoText.BackgroundTransparency = 1
-infoText.TextColor3 = Color3.fromRGB(255, 255, 255)
-infoText.Font = Enum.Font.Code
-infoText.TextSize = 16
-infoText.LineHeight = 1.3
-infoText.Text = "[Connecting to Executor Framework...]"
-infoText.Parent = bg
-
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 140, 0, 45)
-closeBtn.Position = UDim2.new(0.5, -70, 0.82, 0)
-closeBtn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-closeBtn.Font = Enum.Font.Code
-closeBtn.TextSize = 16
-closeBtn.Text = "Show Game"
-closeBtn.Parent = bg
-
-local uiCorner = Instance.new("UICorner")
-uiCorner.CornerRadius = UDim.new(0, 8)
-uiCorner.Parent = closeBtn
-
-closeBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        game:GetService("RunService"):Set3dRenderingEnabled(true)
-        sfGui:Destroy()
-    end)
+-- AREA 99 TELEPORT SYSTEM
+task.spawn(function()
+    local a99 = workspace:WaitForChild("Map",10) and workspace.Map:WaitForChild("99 | Rainbow Road", 10)
+    local pPart = a99 and (a99:FindFirstChild("PERSISTENT") or a99:FindFirstChild("Teleport") or a99:FindFirstChildWhichIsA("BasePart"))
+    for i=1, 20 do
+        local c = LP.Character local h = c and c:FindFirstChild("HumanoidRootPart")
+        if h and pPart then h.CFrame = pPart.CFrame + Vector3.new(0,5,0) break end
+        task.wait(0.5)
+    end
 end)
 
--- Turn off graphics safely now
-pcall(function() game:GetService("RunService"):Set3dRenderingEnabled(false) end)
-
--- ==========================================
--- SAFE FRAMEWORK RESOLVER
--- ==========================================
-local Library = ReplicatedStorage:FindFirstChild("Library") or ReplicatedStorage:WaitForChild("Library", 5)
-local Client = Library and (Library:FindFirstChild("Client") or Library:WaitForChild("Client", 5))
-
-if not Client then
-    infoText.Text = "ERROR: Could not find Game Framework!\nYour executor might not support this version."
-    game:GetService("RunService"):Set3dRenderingEnabled(true)
-    return
+local Lib=RS:WaitForChild("Library",5)local Cl=Lib and Lib:WaitForChild("Client",5)if not Cl then game:GetService("RunService"):Set3dRenderingEnabled(true)txt.Text="Error Loading Framework"return end
+local Net,Save,Br=require(Cl:WaitForChild("Network")),require(Cl:WaitForChild("Save")),workspace:WaitForChild('__THINGS'):WaitForChild('Breakables')
+local sP,sL,sG,bSet,st=0,0,0,false,os.time()
+local function getC(item)
+    local s,d=pcall(Save.Get)if not s or not d or not d.Inventory or not d.Inventory.Misc then return 0 end
+    local c=0 for _,v in pairs(d.Inventory.Misc)do if v.id==item then c=c+(v._am or 1)end end return c
 end
 
-local Network = require(Client:WaitForChild("Network"))
-local Save = require(Client:WaitForChild("Save"))
-local Breakables = workspace:WaitForChild('__THINGS'):WaitForChild('Breakables')
-
--- ==========================================
--- SYSTEM VARIABLES & BASELINES
--- ==========================================
-local startPinatas, startLargeBags, startGiftBags = 0, 0, 0
-local baselinesSet = false
-local startTime = os.time()
-
-local GetItemCount = function(itemName)
-    local success, inventoryData = pcall(function() return Save.Get() end)
-    if not success or not inventoryData then return 0 end
-    
-    local Misc = inventoryData.Inventory and inventoryData.Inventory.Misc
-    if not Misc then return 0 end
-
-    local count = 0
-    for _, v in pairs(Misc) do
-        if v.id == itemName then
-            count = count + (v._am or 1)
-        end
-    end
-    return count
-end
-
--- ==========================================
--- LIVE INTERFACE TRACKING LOOP
--- ==========================================
 task.spawn(function()
     while task.wait(1) do
-        if not sfGui or not sfGui.Parent then break end
-        
-        -- Set baseline numbers once save data finishes loading
-        if not baselinesSet then
-            startPinatas = GetItemCount("Mini Pinata")
-            startLargeBags = GetItemCount("Large Gift Bag")
-            startGiftBags = GetItemCount("Gift Bag")
-            if startPinatas > 0 or startLargeBags > 0 or startGiftBags > 0 then
-                baselinesSet = true
-            end
-        end
-
-        local elapsed = os.time() - startTime
-        local safeElapsed = elapsed > 0 and elapsed or 1
-        
-        local hours = math.floor(elapsed / 3600)
-        local minutes = math.floor((elapsed % 3600) / 60)
-        local seconds = elapsed % 60
-        local timeString = string.format("[%02d:%02d:%02d]", hours, minutes, seconds)
-
-        local success, data = pcall(function() return Save.Get() end)
-        local diamonds = (success and data and data.Inventory and data.Diamonds) or 0
-        local formattedDiamonds = diamonds >= 1e6 and string.format("%.2fm", diamonds / 1e6) or tostring(diamonds)
-
-        local pinatas = GetItemCount("Mini Pinata")
-        local largeBags = GetItemCount("Large Gift Bag")
-        local giftBags = GetItemCount("Gift Bag")
-
-        local pinataRate = string.format("%.1f", ((startPinatas - pinatas) / safeElapsed) * 60)
-        local largeBagRate = string.format("%.1f", ((largeBags - startLargeBags) / safeElapsed) * 60)
-        local giftBagRate = string.format("%.1f", ((giftBags - startGiftBags) / safeElapsed) * 60)
-
-        infoText.Text = timeString .. "\n\n" ..
-                        "Status: Active Piñata Farm\n" ..
-                        "Gems: " .. formattedDiamonds .. "\n\n" ..
-                        "--- Current Inventory ---\n" ..
-                        "Piñatas: " .. pinatas .. "\n" ..
-                        "Large Gift Bags: " .. largeBags .. "\n" ..
-                        "Gift Bags: " .. giftBags .. "\n\n" ..
-                        "--- Live Rates (Per Minute) ---\n" ..
-                        "Piñatas Used: " .. pinataRate .. "/min\n" ..
-                        "Large Gift Bags Grabbed: " .. largeBagRate .. "/min\n" ..
-                        "Gift Bags Grabbed: " .. giftBagRate .. "/min"
+        if not sf.Parent then break end
+        if not bSet then sP,sL,sG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")bSet=(sP>0 or sL>0 or sG>0)end
+        local el=os.time()-st local se=el>0 and el or 1
+        local h,m,s=math.floor(el/3600),math.floor((el%3600)/60),el%60
+        local _,d=pcall(Save.Get)local g=(d and d.Inventory and d.Inventory.Diamonds)or 0
+        local fG=g>=1e6 and string.format("%.2fm",g/1e6) or tostring(g)
+        local cP,cL,cG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")
+        txt.Text=string.format("[%02d:%02d:%02d]\nGems: %s\n\n- Inventory -\nPinatas: %d\nLarge Bags: %d\nGift Bags: %d\n\n- Rates -\nPinatas: %.1f/m\nLarge Bags: %.1f/m\nGift Bags: %.1f/m",h,m,s,fG,cP,cL,cG,((sP-cP)/se)*60,((cL-sL)/se)*60,((cG-sG)/se)*60)
     end
 end)
 
--- ==========================================
--- BACKGROUND AUTOMATION TASKS
--- ==========================================
+pcall(function()LP.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled=false end)
+LP.Idled:Connect(function()VU:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)task.wait(0.5)VU:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)end)
 
--- 1. Anti-AFK
-pcall(function()
-    local CoreScripts = LocalPlayer.PlayerScripts:FindFirstChild("Scripts")
-    local Core = CoreScripts and CoreScripts:FindFirstChild("Core")
-    if Core and Core:FindFirstChild("Idle Tracking") then
-        Core["Idle Tracking"].Enabled = false
-    end
+-- FIX: ROBUST REWRITTEN AUTO COLLECT LOOTBAGS & ORBS
+workspace.__THINGS.Lootbags.ChildAdded:Connect(function(l)
+    if l then task.wait(0.1)pcall(function() Net.Fire("Lootbags_Claim",{l.Name}) end) end
 end)
-LocalPlayer.Idled:Connect(function()
-    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-    task.wait(0.5)
-    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-end)
-
--- 2. Auto-Collect
-workspace.__THINGS:FindFirstChild("Lootbags").ChildAdded:Connect(function(lootbag)
-    if lootbag then pcall(function() Network.Fire("Lootbags_Claim", { lootbag.Name }) end) end
+workspace.__THINGS.Orbs.ChildAdded:Connect(function(o)
+    if o then pcall(function() Net.Fire("Orbs: Collect", {o.Name}) end) end
 end)
 pcall(function()
-    Network.Fired("Orbs: Create"):Connect(function(InfoTable)
-        local Orbs = {}
-        for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
-        Network.Fire("Orbs: Collect", Orbs)
+    Net.Fired("Orbs: Create"):Connect(function(t)
+        local o={} for _,v in ipairs(t) do table.insert(o, v.id or v[1]) end
+        pcall(function() Net.Fire("Orbs: Collect", o) end)
     end)
 end)
 
--- 3. Speed Hack
-pcall(function()
-    hookfunction(require(Client.PlayerPet).CalculateSpeedMultiplier, function() return 9999 end)
-end)
-
--- 4. Auto-Break
+pcall(function()hookfunction(require(Cl.PlayerPet).CalculateSpeedMultiplier,function()return 9999 end)end)
 task.spawn(function()
-    while task.wait(0.25) do 
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
-
-        local currentBreakables = Breakables:GetChildren() 
-        local myPosition = hrp.Position
-
-        for i = 1, #currentBreakables do
-            local v = currentBreakables[i]
-            if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
-                local primary = v.PrimaryPart
-                if primary then
-                    local dist = (primary.Position - myPosition).Magnitude
-                    if dist <= 150 then
-                        pcall(function() Network.UnreliableFire("Breakables_PlayerDealDamage", v.Name) end)
-                        task.wait(0.02)
-                    end
-                end
-            end
+    while task.wait(0.25) do
+        local c=LP.Character local h=c and c:FindFirstChild("HumanoidRootPart")if h then
+            local ch=Br:GetChildren()local pos=h.Position
+            for i=1,#ch do local v=ch[i]if v:IsA("Model")and v:GetAttribute("BreakableID")=="Pinata"then
+                local p=v.PrimaryPart if p and (p.Position-pos).Magnitude<=150 then pcall(function()Net.UnreliableFire("Breakables_PlayerDealDamage",v.Name)end)task.wait(0.02)end
+            end end
         end
     end
 end)
 
--- 5. Auto-Spawn
-local PinataUid = nil
-local GetPinataUID = function()
-    local success, inventoryData = pcall(function() return Save.Get() end)
-    if not success or not inventoryData then return nil end
-    local Misc = inventoryData.Inventory and inventoryData.Inventory.Misc
-    if not Misc then return nil end
-
-    if PinataUid and Misc[PinataUid] and Misc[PinataUid].id == "Mini Pinata" then return PinataUid end
-    for uid, v in pairs(Misc) do
-        if v.id == "Mini Pinata" then PinataUid = uid return uid end
-    end
-    return nil
-end
-
+local pUid=nil
 task.spawn(function()
-    while task.wait(2) do 
-        local currentPinata = GetPinataUID()
-        if not currentPinata then continue end
-
-        local success, errMessage = Network.Invoke("MiniPinata_Consume", currentPinata)
-        if not success and errMessage then
-            if errMessage == "There is already something in this area!" or errMessage == "There are too many random events already in the world!" then
-                continue
-            else
-                repeat
-                    success, errMessage = Network.Invoke("MiniPinata_Consume", currentPinata)
-                    task.wait(2)
-                until success or GetPinataUID() == nil or errMessage == "There is already something in this area!"
+    while task.wait(2) do
+        local _,d=pcall(Save.Get)local m=d and d.Inventory and d.Inventory.Misc
+        if m then
+            if pUid and m[pUid]and m[pUid].id=="Mini Pinata"then else pUid=nil for u,v in pairs(m)do if v.id=="Mini Pinata"then pUid=u break end end end
+            if pUid then
+                local s,err=Net.Invoke("MiniPinata_Consume",pUid)
+                if not s and err and err~="There is already something in this area!"and err~="There are too many random events already in the world!"then
+                    repeat s,err=Net.Invoke("MiniPinata_Consume",pUid)task.wait(2)until s or not pUid or err=="There is already something in this area!"
+                end
             end
         end
     end
