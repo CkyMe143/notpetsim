@@ -32,7 +32,7 @@ end)
 
 pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)end)
 
--- HARDCODED INTEGER TELEPORT COORDINATES WITH IDENTITY ROTATION
+-- HARDCODED INTEGER TELEPORT COORDINATES
 task.spawn(function()
     local targetCFrame = CFrame.new(-60, 161, 6431, 1, 0, 0, 0, 1, 0, 0, 0, 1)
     for i = 1, 15 do 
@@ -70,34 +70,41 @@ end)
 pcall(function()LP.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled=false end)
 LP.Idled:Connect(function()VU:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)task.wait(0.5)VU:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)end)
 
--- HIGH-FREQUENCY SPAM COLLECTOR FOR ORBS & LOOTBAGS
+-- PHYSICAL VACUUM METHOD (BYPASSES FIRE ENDPOINT PATCHES)
 task.spawn(function()
     local things = workspace:WaitForChild("__THINGS")
     local orbsContainer = things:WaitForChild("Orbs")
     local lootbagsContainer = things:WaitForChild("Lootbags")
     
-    while task.wait(0.1) do
+    while task.wait(0.2) do
         pcall(function()
-            local currentOrbs = orbsContainer:GetChildren()
-            if #currentOrbs > 0 then
-                local list = {}
-                for i=1, #currentOrbs do
-                    table.insert(list, currentOrbs[i].Name)
-                    if i % 30 == 0 then
-                        Net.Fire("Orbs: Collect", list)
-                        list = {}
+            local character = LP.Character
+            local root = character and character:FindFirstChild("HumanoidRootPart")
+            if root then
+                local currentPosition = root.Position
+                
+                -- Physically moves orb objects directly onto your character to force collection collisions
+                local currentOrbs = orbsContainer:GetChildren()
+                for i = 1, #currentOrbs do
+                    local orb = currentOrbs[i]
+                    if orb:IsA("BasePart") then
+                        orb.CFrame = CFrame.new(currentPosition)
+                    elseif orb:IsA("Model") and orb.PrimaryPart then
+                        orb:SetPrimaryPartCFrame(CFrame.new(currentPosition))
                     end
                 end
-                if #list > 0 then Net.Fire("Orbs: Collect", list) end
-            end
-            
-            local currentBags = lootbagsContainer:GetChildren()
-            if #currentBags > 0 then
-                for i=1, #currentBags do
-                    Net.Fire("Lootbags_Claim", {currentBags[i].Name})
+                
+                -- Physically pulls down lootbags to your character location
+                local currentBags = lootbagsContainer:GetChildren()
+                for i = 1, #currentBags do
+                    local bag = currentBags[i]
+                    if bag:IsA("BasePart") then
+                        bag.CFrame = CFrame.new(currentPosition)
+                    elseif bag:IsA("Model") and bag.PrimaryPart then
+                        bag:SetPrimaryPartCFrame(CFrame.new(currentPosition))
+                    end
                 end
             end
-            pcall(function() Net.Fire("Orbs: Collect", {}) end)
         end)
     end
 end)
