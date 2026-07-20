@@ -97,26 +97,36 @@ local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 
 local PLAYER_THRESHOLD = 7
-local TARGET_PLACE_ID = 8737899170 -- Replace with your destination Place ID
-
--- Optional: If you have a specific Private Server Access Code
+local TARGET_PLACE_ID = 8737899170
 local PRIVATE_SERVER_CODE = "172e7ceca4dd7b4bad78e62fa9cea27e" 
 
 local function handleServerSwitch()
     local currentCount = #Players:GetPlayers()
     
     if currentCount >= PLAYER_THRESHOLD then
-        print("Player threshold met. Teleporting to private/reserved server...")
+        print("Player threshold met. Teleporting...")
         
         local teleportOptions = Instance.new("TeleportOptions")
         
-        -- If joining an existing private server using an access code:
         if PRIVATE_SERVER_CODE and PRIVATE_SERVER_CODE ~= "" then
-            teleportOptions.ServerInstanceId = PRIVATE_SERVER_CODE
-        else
-            -- Alternatively, request a new reserved/private instance
-            teleportOptions.ShouldReserveServer = true
+            teleportOptions.ReservedServerAccessCode = PRIVATE_SERVER_CODE
         end
+
+        local success, err = pcall(function()
+            TeleportService:TeleportAsync(TARGET_PLACE_ID, {LocalPlayer}, teleportOptions)
+        end)
+        
+        if not success then
+            warn("Teleport failed:", err)
+        end
+    end
+end
+
+-- Connect to PlayerAdded so it checks whenever a new player joins
+Players.PlayerAdded:Connect(handleServerSwitch)
+
+-- Run an initial check for the local player
+handleServerSwitch()
 
         pcall(function()
             TeleportService:TeleportAsync(TARGET_PLACE_ID, {LocalPlayer}, teleportOptions)
