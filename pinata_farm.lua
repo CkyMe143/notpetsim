@@ -183,16 +183,46 @@ task.spawn(function()
     end
 end)
 
-local pUid=nil
+local pUid = nil
+local INTERVAL = 3 -- Target interval in seconds
+
+-- Helper function to calculate time until the next synchronized interval
+local function waitTillNextInterval(interval)
+    local currentTime = workspace:GetServerTimeNow() -- Real-world UTC Unix timestamp (supports precision)
+    local timeToWait = interval - (currentTime % interval)
+    task.wait(timeToWait)
+end
+
 task.spawn(function()
-    while task.wait(2) do
-        local _,d=pcall(Save.Get)local m=d and d.Inventory and d.Inventory.Misc
-        if m then
-            if pUid and m[pUid]and m[pUid].id=="Mini Pinata"then else pUid=nil for u,v in pairs(m)do if v.id=="Mini Pinata"then pUid=u break end end end
+    while true do
+        -- Wait until the next exact 3-second mark on the world clock
+        waitTillNextInterval(INTERVAL)
+        
+        local success, data = pcall(Save.Get)
+        local inventoryMisc = success and data and data.Inventory and data.Inventory.Misc
+
+        if inventoryMisc then
+            -- Check if current pUid is still valid
+            if not (pUid and inventoryMisc[pUid] and inventoryMisc[pUid].id == "Mini Pinata") then
+                pUid = nil
+                for uid, item in pairs(inventoryMisc) do
+                    if item.id == "Mini Pinata" then
+                        pUid = uid
+                        break
+                    end
+                end
+            end
+
+            -- Attempt consumption on synchronized interval
             if pUid then
-                local s,err=Net.Invoke("MiniPinata_Consume",pUid)
-                if not s and err and err~="There is already something in this area!"and err~="There are too many random events already in the world!"then
-                    repeat s,err=Net.Invoke("MiniPinata_Consume",pUid)task.wait(2)until s or not pUid or err=="There is already something in this area!"
+                local consumed, err = Net.Invoke("MiniPinata_Consume", pUid)
+
+                -- Retry handling if transient network error occurs
+                if not consumed and err and err ~= "There is already something in this area!" and err ~= "There are too many random events already in the world!" then
+                    repeat
+                        waitTillNextInterval(INTERVAL)
+                        consumed, err = Net.Invoke("MiniPinata_Consume", pUid)
+                    until consumed or not pUid or err == "There is already something in this area!"
                 end
             end
         end
