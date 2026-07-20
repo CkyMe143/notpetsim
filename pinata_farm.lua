@@ -30,19 +30,29 @@ miniBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
-pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)end)
-
--- HARDCODED INTEGER TELEPORT COORDINATES
+pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)-- ALTERNATE BETWEEN AREA 88 AND AREA 99 EVERY 2 SECONDS
 task.spawn(function()
-    local targetCFrame = CFrame.new(-60, 161, 6431, 1, 0, 0, 0, 1, 0, 0, 0, 1)
-    for i = 1, 15 do 
-        local c = LP.Character 
-        local h = c and c:FindFirstChild("HumanoidRootPart") 
-        if h then 
-            h.CFrame = targetCFrame 
-            break 
-        end 
-        task.wait(0.5) 
+    local area98 = CFrame.new(
+        -- Put Area 88 coordinates here
+    )
+
+    local area99 = CFrame.new(-60, 161, 6431, 1, 0, 0, 0, 1, 0, 0, 0, 1)
+
+    while true do
+        local character = LP.Character
+        local root = character and character:FindFirstChild("HumanoidRootPart")
+
+        if root then
+            local current = math.floor(os.time() / 2) % 2
+
+            if current == 0 then
+                root.CFrame = area98
+            else
+                root.CFrame = area99
+            end
+        end
+
+        task.wait(0.1)
     end
 end)
 
