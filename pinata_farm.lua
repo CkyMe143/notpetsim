@@ -30,7 +30,10 @@ miniBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
-pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)-- ALTERNATE BETWEEN AREA 88 AND AREA 99 EVERY 2 SECONDS
+pcall(function()
+        game:GetService("RunService"):Set3dRenderingEnabled(false)
+    end)        
+        -- ALTERNATE BETWEEN AREA 88 AND AREA 99 EVERY 2 SECONDS
 task.spawn(function()
     local area98 = CFrame.new(-60, 117, 6113, 1, 0, 0, 0, 1, 0, 0, 0, 1)
 
