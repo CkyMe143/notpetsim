@@ -5,7 +5,7 @@ if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
 local sf=Instance.new("ScreenGui",CG)sf.Name="AFK_Saver_UI"sf.ResetOnSpawn=false
 local bg=Instance.new("Frame",sf)bg.Size=UDim2.new(1,0,1,0)bg.BackgroundColor3=Color3.fromRGB(0,0,0)bg.BorderSizePixel=0
-local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Connecting to Framework..."
+local txt=Instance.new("TextLabel",bg)txt.Size=UDim2.new(1,0,0.6,0)txt.Position=UDim2.new(0,0,0.15,0)txt.BackgroundTransparency=1;txt.TextColor3=Color3.fromRGB(255,255,255)txt.Font=Enum.Font.Code;txt.TextSize=15;txt.Text="Bypassing Network Framework..."
 
 local btn=Instance.new("TextButton",bg)btn.Size=UDim2.new(0,140,0,45)btn.Position=UDim2.new(0.5,-70,0.82,0)btn.BackgroundColor3=Color3.fromRGB(40,40,40)btn.TextColor3=Color3.fromRGB(255,255,255)btn.Font=Enum.Font.Code;btn.TextSize=16;btn.Text="Show Game"Instance.new("UICorner",btn).CornerRadius=UDim.new(0,8)
 
@@ -46,38 +46,58 @@ task.spawn(function()
     end
 end)
 
--- ARCEUS X COMPATIBLE FRAMEWORK LOADING
+-- ADVANCED ARCEUS HYBRID MODULE GETTER (GC + REQUIRE FALLBACK)
 local Net, Save, Br
 task.spawn(function()
-    pcall(function()
-        local Lib = RS:WaitForChild("Library", 10)
-        local Cl = Lib and Lib:WaitForChild("Client", 10)
-        if Cl then
-            Net = require(Cl:WaitForChild("Network"))
-            Save = require(Cl:WaitForChild("Save"))
+    local req = require
+    local renv = getrenv and getrenv()
+    if renv steering and renv.require then req = renv.require end
+
+    for i = 1, 40 do
+        if Net and Save then break end
+        pcall(function()
+            local Lib = RS:FindFirstChild("Library")
+            local Cl = Lib and Lib:FindFirstChild("Client")
+            if Cl then
+                if not Net and Cl:FindFirstChild("Network") then Net = req(Cl.Network) end
+                if not Save and Cl:FindFirstChild("Save") then Save = req(Cl.Save) end
+            end
+        end)
+        
+        -- GC Scraper fallback loop specifically tailored for Arceus X environments
+        if not Net or not Save then
+            pcall(function()
+                local gc = getgc and getgc(true) or {}
+                for _, v in pairs(gc) do
+                    if type(v) == "table" then
+                        if not Net and rawget(v, "Invoke") and rawget(v, "Fire") then Net = v end
+                        if not Save and rawget(v, "Get") and rawget(v, "Save") then Save = v end
+                    end
+                    if Net and Save then break end
+                end
+            end)
         end
-    end)
-    pcall(function()
-        Br = workspace:WaitForChild('__THINGS'):WaitForChild('Breakables', 10)
-    end)
+        task.wait(0.25)
+    end
+    pcall(function() Br = workspace:WaitForChild('__THINGS'):WaitForChild('Breakables', 5) end)
 end)
 
 local sP,sL,sG,bSet,st=0,0,0,false,os.time()
 
 local function getC(item)
-    if not Save then return 0 end
+    if not Save or type(Save) ~= "table" or not Save.Get then return 0 end
     local s,d=pcall(Save.Get)
     if not s or not d or type(d) ~= "table" or not d.Inventory or not d.Inventory.Misc then return 0 end
     local c=0 for _,v in pairs(d.Inventory.Misc) do if type(v) == "table" and v.id==item then c=c+(v._am or 1)end end return c
 end
 
--- RESILIENT UI / INVENTORY DISPLAY THREAD
+-- RESILIENT UI / MONITOR WINDOW
 task.spawn(function()
     while task.wait(1) do
         if not sf.Parent then break end
         
-        if not Save then
-            txt.Text = "Waiting for Framework to Initialize...\n(Arceus X Hooking)"
+        if not Save or not Net then
+            txt.Text = "Arceus X Hooking:\nSearching Memory Allocations..."
         else
             if not bSet then 
                 sP,sL,sG=getC("Mini Pinata"),getC("Large Gift Bag"),getC("Gift Bag")
@@ -144,7 +164,6 @@ task.spawn(function()
                         local p=v.PrimaryPart if p and (p.Position-pos).Magnitude<=150 then pcall(function()Net.UnreliableFire("Breakables_PlayerDealDamage",v.Name)end)task.wait(0.02)end
                     end end
                 end
-             pcall(function() Net.Fire("Orbs: Collect", {}) end)
             end)
         end
     end
@@ -154,7 +173,7 @@ end)
 local pUid=nil
 task.spawn(function()
     while task.wait(2) do
-        if Net and Save then
+        if Net and Save and Save.Get then
             pcall(function()
                 local _,d=pcall(Save.Get)local m=d and d.Inventory and d.Inventory.Misc
                 if m then
