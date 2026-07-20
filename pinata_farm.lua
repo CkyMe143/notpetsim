@@ -93,26 +93,44 @@ print("Player Successfully UnIdled.")
 end)
 
 local Players = game:GetService("Players")
+local TeleportService = game:GetService("TeleportService")
 local LocalPlayer = Players.LocalPlayer
 
 local PLAYER_THRESHOLD = 7
+local TARGET_PLACE_ID = 8737899170 -- Replace with your destination Place ID
 
-local function evaluatePlayerCount()
+-- Optional: If you have a specific Private Server Access Code
+local PRIVATE_SERVER_CODE = "172e7ceca4dd7b4bad78e62fa9cea27e" 
+
+local function handleServerSwitch()
     local currentCount = #Players:GetPlayers()
     
     if currentCount >= PLAYER_THRESHOLD then
-        -- Gracefully disconnect the client from the server
-        LocalPlayer:Kick("Leaving: Server reached 7 or more players.")
+        print("Player threshold met. Teleporting to private/reserved server...")
+        
+        local teleportOptions = Instance.new("TeleportOptions")
+        
+        -- If joining an existing private server using an access code:
+        if PRIVATE_SERVER_CODE and PRIVATE_SERVER_CODE ~= "" then
+            teleportOptions.ServerInstanceId = PRIVATE_SERVER_CODE
+        else
+            -- Alternatively, request a new reserved/private instance
+            teleportOptions.ShouldReserveServer = true
+        end
+
+        pcall(function()
+            TeleportService:TeleportAsync(TARGET_PLACE_ID, {LocalPlayer}, teleportOptions)
+        end)
     end
 end
 
--- Listen for new players joining the server
+-- Listen for new players joining
 Players.PlayerAdded:Connect(function()
-    evaluatePlayerCount()
+    handleServerSwitch()
 end)
 
--- Initial check in case the server already has 7+ players upon loading
-evaluatePlayerCount()
+-- Initial check upon loading in
+handleServerSwitch()
 
 -- PHYSICAL VACUUM METHOD (BYPASSES FIRE ENDPOINT PATCHES)
 task.spawn(function()
