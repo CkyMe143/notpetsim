@@ -44,7 +44,7 @@ task.spawn(function()
         local root = character and character:FindFirstChild("HumanoidRootPart")
 
         if root then
-            local current = math.floor(os.time() / 3) % 2
+            local current = math.floor(os.time() / 4) % 2
 
             if current == 0 then
                 root.CFrame = area98
