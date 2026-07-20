@@ -80,18 +80,15 @@ end)
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- Periodic Jump Loop (Runs every 5 minutes / 300 seconds)
-task.spawn(function()
-    while true do
-        task.wait(300) -- Wait 5 minutes
-        
-        local character = LocalPlayer.Character
-        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-        
-        if humanoid and humanoid.Health > 0 then
-            humanoid.Jump = true
-        end
-    end
+local Players = game:GetService("Players")
+local player = Players.LocalPlayer
+local VirtualUser = game:GetService("VirtualUser")
+local currentCamera = game.Workspace.CurrentCamera
+player.Idled:Connect(function()
+VirtualUser:Button2Down(Vector2.zero, currentCamera.CFrame)
+task.wait(1)
+VirtualUser:Button2Up(Vector2.zero, currentCamera.CFrame)
+print("Player Successfully UnIdled.")
 end)
 
 local Players = game:GetService("Players")
