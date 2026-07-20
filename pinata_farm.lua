@@ -67,8 +67,44 @@ task.spawn(function()
     end
 end)
 
-pcall(function()LP.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled=false end)
-LP.Idled:Connect(function()VU:Button2Down(Vector2.new(0,0),workspace.CurrentCamera.CFrame)task.wait(0.5)VU:Button2Up(Vector2.new(0,0),workspace.CurrentCamera.CFrame)end)
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- Periodic Jump Loop (Runs every 5 minutes / 300 seconds)
+task.spawn(function()
+    while true do
+        task.wait(300) -- Wait 5 minutes
+        
+        local character = LocalPlayer.Character
+        local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+        
+        if humanoid and humanoid.Health > 0 then
+            humanoid.Jump = true
+        end
+    end
+end)
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+local PLAYER_THRESHOLD = 7
+
+local function evaluatePlayerCount()
+    local currentCount = #Players:GetPlayers()
+    
+    if currentCount >= PLAYER_THRESHOLD then
+        -- Gracefully disconnect the client from the server
+        LocalPlayer:Kick("Leaving: Server reached 7 or more players.")
+    end
+end
+
+-- Listen for new players joining the server
+Players.PlayerAdded:Connect(function()
+    evaluatePlayerCount()
+end)
+
+-- Initial check in case the server already has 7+ players upon loading
+evaluatePlayerCount()
 
 -- PHYSICAL VACUUM METHOD (BYPASSES FIRE ENDPOINT PATCHES)
 task.spawn(function()
