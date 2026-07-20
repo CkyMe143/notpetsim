@@ -32,9 +32,7 @@ end)
 
 pcall(function()game:GetService("RunService"):Set3dRenderingEnabled(false)-- ALTERNATE BETWEEN AREA 88 AND AREA 99 EVERY 2 SECONDS
 task.spawn(function()
-    local area98 = CFrame.new(
-        -- Put Area 88 coordinates here
-    )
+    local area98 = CFrame.new(-60, 117, 6113, 1, 0, 0, 0, 1, 0, 0, 0, 1)
 
     local area99 = CFrame.new(-60, 161, 6431, 1, 0, 0, 0, 1, 0, 0, 0, 1)
 
