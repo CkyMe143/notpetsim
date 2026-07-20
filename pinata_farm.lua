@@ -151,34 +151,27 @@ LP.Idled:Connect(function()
     print("Player Successfully UnIdled.")
 end)
 
--- Server Switching Logic
-local PLAYER_THRESHOLD = 7
-local TARGET_PLACE_ID = 8737899170
-local PRIVATE_SERVER_CODE = "172e7ceca4dd7b4bad78e62fa9cea27e" 
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 
-local function handleServerSwitch()
+local PLAYER_THRESHOLD = 7
+
+local function evaluatePlayerCount()
     local currentCount = #Players:GetPlayers()
     
     if currentCount >= PLAYER_THRESHOLD then
-        print("Player threshold met. Teleporting...")
-        
-        local teleportOptions = Instance.new("TeleportOptions")
-        if PRIVATE_SERVER_CODE and PRIVATE_SERVER_CODE ~= "" then
-            teleportOptions.ReservedServerAccessCode = PRIVATE_SERVER_CODE
-        end
-
-        local success, err = pcall(function()
-            TeleportService:TeleportAsync(TARGET_PLACE_ID, {LP}, teleportOptions)
-        end)
-        
-        if not success then
-            warn("Teleport failed:", err)
-        end
+        -- Gracefully disconnect the client from the server
+        LocalPlayer:Kick("Leaving: Server reached 7 or more players.")
     end
 end
 
-Players.PlayerAdded:Connect(handleServerSwitch)
-handleServerSwitch()
+-- Listen for new players joining the server
+Players.PlayerAdded:Connect(function()
+    evaluatePlayerCount()
+end)
+
+-- Initial check in case the server already has 7+ players upon loading
+evaluatePlayerCount()
 
 -- Item Vacuum Loop
 task.spawn(function()
