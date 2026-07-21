@@ -142,15 +142,20 @@ task.spawn(function()
     end
 end)
 
--- Standard Periodic Jump Loop
+local Players = game:GetService("Players")
+local VirtualUser = game:GetService("VirtualUser")
+
+-- Wrap in task.spawn so it runs in the background without freezing other code
 task.spawn(function()
     while true do
-        task.wait(300) -- Wait 5 minutes
-        local char = LP.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum.Jump = true
-        end
+        task.wait(60) -- Wait 60 seconds (1 minute)
+        
+        -- Simulate a virtual input click
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new(0, 0))
+            print("Periodic Anti-AFK: Clicked at " .. os.date("%X"))
+        end)
     end
 end)
 
