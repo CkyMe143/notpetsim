@@ -142,13 +142,17 @@ task.spawn(function()
     end
 end)
 
-while true do
-    task.wait(300) -- Wait 10 minutes
-    local char = game.Players.LocalPlayer.Character
-    if char and char:FindFirstChildOfClass("Humanoid") then
-        char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+-- Standard Periodic Jump Loop
+task.spawn(function()
+    while true do
+        task.wait(300) -- Wait 5 minutes
+        local char = LP.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.Jump = true
+        end
     end
-end
+end)
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
