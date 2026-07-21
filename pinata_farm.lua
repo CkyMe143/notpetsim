@@ -142,14 +142,13 @@ task.spawn(function()
     end
 end)
 
--- Anti-AFK
-LP.Idled:Connect(function()
-    local currentCamera = workspace.CurrentCamera
-    VU:Button2Down(Vector2.zero, currentCamera.CFrame)
-    task.wait(1)
-    VU:Button2Up(Vector2.zero, currentCamera.CFrame)
-    print("Player Successfully UnIdled.")
-end)
+while true do
+    task.wait(300) -- Wait 10 minutes
+    local char = game.Players.LocalPlayer.Character
+    if char and char:FindFirstChildOfClass("Humanoid") then
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+    end
+end
 
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
