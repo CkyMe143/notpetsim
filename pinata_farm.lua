@@ -138,7 +138,7 @@ task.spawn(function()
         local cP, cL, cG = getC("Mini Pinata"), getC("Large Gift Bag"), getC("Gift Bag")
         
         txt.Text = string.format("[%02d:%02d:%02d]\n\n- Inventory -\nPinatas: %d\nLarge Bags: %d\nGift Bags: %d\n\n- Rates -\nPinatas: %.1f/m\nLarge Bags: %.1f/m\nGift Bags: %.1f/m", 
-            h, m, s, cP, cL, cG, ((sP - cP) / se) * 60, ((cL - cL) / se) * 60, ((cG - sG) / se) * 60)
+            h, m, s, cP, cL, cG, ((sP - cP) / se) * 60, ((cL - sL) / se) * 60, ((cG - sG) / se) * 60)
     end
 end)
 
