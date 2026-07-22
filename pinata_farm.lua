@@ -6,9 +6,7 @@ getgenv().Config = {
         "99 | Rainbow Road",
         "98 | Colorful Clouds",
     },
-    ['TargetUser'] = "Cleave_Luckyy", -- Target account to follow when out of Mini Piñatas
-    ['AutoEatPineapple'] = true,     -- Eat Pineapples automatically
-    ['AutoEatRainbow'] = true        -- Eat Rainbow Fruit automatically
+    ['TargetUser'] = "Cleave_Luckyy" -- Target account to follow when out of Mini Piñatas
 }
 
 -- ====================================================================
@@ -32,12 +30,6 @@ local Client = Library:WaitForChild("Client")
 
 local Network = require(Client.Network)
 local Save = require(Client.Save)
-
--- Official Client Fruit Command Module
-local FruitCmds
-pcall(function()
-    FruitCmds = require(Client:WaitForChild("FruitCmds"))
-end)
 
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
@@ -187,8 +179,6 @@ task.spawn(function()
 
         local cL, cG = getC("Large Gift Bag"), getC("Gift Bag")
         local currentPinatasLeft = getC("Mini Pinata")
-        local currentPineapples = getC("Pineapple")
-        local currentRainbows = getC("Rainbow")
 
         local totalLargeGained = math.max(0, cL - sL)
         local totalGiftGained = math.max(0, cG - sG)
@@ -200,8 +190,9 @@ task.spawn(function()
         txt.Text = string.format(
             "[%02d:%02d:%02d]\n\n" ..
             "- Inventory -\n" ..
-            "Mini Piñatas Remaining: %d\n" ..
-            "Pineapples: %d | Rainbow Fruits: %d\n\n" ..
+            "Mini Piñatas Left: %d\n" ..
+            "Large Gift Bags Left: %d\n" ..
+            "Gift Bags Left: %d\n\n" ..
             "- Session Totals -\n" ..
             "Piñatas Spawned: %d\n" ..
             "Large Gift Bags Gained: +%d\n" ..
@@ -212,7 +203,8 @@ task.spawn(function()
             "Gift Bags: %.1f/m",
             h, m, s,
             currentPinatasLeft,
-            currentPineapples, currentRainbows,
+            cL,
+            cG,
             pinatasSpawned,
             totalLargeGained,
             totalGiftGained,
@@ -242,9 +234,9 @@ LocalPlayer.Idled:Connect(function()
     end)
 end)
 
--- Backup pulse loop every 12 seconds
+-- Backup pulse loop every 120 seconds
 task.spawn(function()
-    while task.wait(12) do
+    while task.wait(120) do
         pcall(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.zero)
@@ -271,35 +263,6 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
         table.insert(Orbs, v.id) 
     end
     Network.Fire("Orbs: Collect", Orbs)
-end)
-
--- NATIVE CLIENT MODULE AUTO-EAT LOOP
-task.spawn(function()
-    while task.wait(5) do
-        -- 1. Native Client Module Execution
-        if FruitCmds and type(FruitCmds.Consume) == "function" then
-            if Config.AutoEatPineapple and getC("Pineapple") > 0 then
-                pcall(function() FruitCmds.Consume("Pineapple", 1) end)
-                task.wait(0.3)
-            end
-            if Config.AutoEatRainbow and getC("Rainbow") > 0 then
-                pcall(function() FruitCmds.Consume("Rainbow", 1) end)
-                task.wait(0.3)
-            end
-        else
-            -- 2. Direct Network Fallbacks
-            if Config.AutoEatPineapple and getC("Pineapple") > 0 then
-                pcall(function() Network.Invoke("Fruit: Consume", "Pineapple", 1) end)
-                pcall(function() Network.Invoke("Fruit_Consume", "Pineapple", 1) end)
-                task.wait(0.3)
-            end
-            if Config.AutoEatRainbow and getC("Rainbow") > 0 then
-                pcall(function() Network.Invoke("Fruit: Consume", "Rainbow", 1) end)
-                pcall(function() Network.Invoke("Fruit_Consume", "Rainbow", 1) end)
-                task.wait(0.3)
-            end
-        end
-    end
 end)
 
 -- Pinata Auto-Damage Loop
