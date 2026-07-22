@@ -7,7 +7,8 @@ getgenv().Config = {
         "98 | Colorful Clouds",
     },
     ['TargetUser'] = "Cleave_Luckyy", -- Target account to follow when out of Mini Piñatas
-    ['AutoEatPineapple'] = true      -- Automatically eat Pineapples to maintain fruit buff
+    ['AutoEatPineapple'] = true,     -- Eat Pineapples automatically
+    ['AutoEatRainbow'] = true        -- Eat Rainbow Fruit automatically
 }
 
 -- ====================================================================
@@ -188,6 +189,7 @@ task.spawn(function()
         local cL, cG = getC("Large Gift Bag"), getC("Gift Bag")
         local currentPinatasLeft = getC("Mini Pinata")
         local currentPineapples = getC("Pineapple")
+        local currentRainbows = getC("Rainbow")
 
         local totalLargeGained = math.max(0, cL - sL)
         local totalGiftGained = math.max(0, cG - sG)
@@ -200,7 +202,7 @@ task.spawn(function()
             "[%02d:%02d:%02d]\n\n" ..
             "- Inventory -\n" ..
             "Mini Piñatas Remaining: %d\n" ..
-            "Pineapples In Stock: %d\n\n" ..
+            "Pineapples: %d | Rainbow Fruits: %d\n\n" ..
             "- Session Totals -\n" ..
             "Piñatas Broken: %d\n" ..
             "Large Gift Bags Gained: +%d\n" ..
@@ -211,7 +213,7 @@ task.spawn(function()
             "Gift Bags: %.1f/m",
             h, m, s,
             currentPinatasLeft,
-            currentPineapples,
+            currentPineapples, currentRainbows,
             pinatasBroken,
             totalLargeGained,
             totalGiftGained,
@@ -226,12 +228,29 @@ end)
 -- AUTOMATION HOOKS & LOOPS
 -- ====================================================================
 
--- Anti-AFK
-LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
+-- REBUILT ANTI-AFK (Continuous Ticker)
+local getcons = getconnections or get_signal_cons
+if getcons then
+    for _, conn in pairs(getcons(LocalPlayer.Idled)) do
+        if conn.Disable then conn:Disable() elseif conn.Disconnect then conn:Disconnect() end
+    end
+end
+
 LocalPlayer.Idled:Connect(function()
-    VirtualUser:Button2Down(Vector2.zero, workspace.CurrentCamera.CFrame)
-    task.wait(1)
-    VirtualUser:Button2Up(Vector2.zero, workspace.CurrentCamera.CFrame)
+    pcall(function()
+        VirtualUser:CaptureController()
+        VirtualUser:ClickButton2(Vector2.zero)
+    end)
+end)
+
+-- Backup pulse loop every 120 seconds
+task.spawn(function()
+    while task.wait(120) do
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.zero)
+        end)
+    end
 end)
 
 -- Max Pet Speed Hook
@@ -255,16 +274,27 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     Network.Fire("Orbs: Collect", Orbs)
 end)
 
--- Auto Eat Pineapple Loop
+-- Fixed Multi-Fruit Auto Eat Loop
 task.spawn(function()
     while task.wait(5) do
         if Config.AutoEatPineapple and getC("Pineapple") > 0 then
             pcall(function()
-                Network.Fire("Fruit: Consume", "Pineapple", 1)
+                Network.Invoke("Fruits: Consume", "Pineapple", 1)
             end)
             pcall(function()
-                Network.Fire("Fruit_Consume", "Pineapple", 1)
+                Network.Fire("Fruits: Consume", "Pineapple", 1)
             end)
+            task.wait(0.5)
+        end
+        
+        if Config.AutoEatRainbow and getC("Rainbow") > 0 then
+            pcall(function()
+                Network.Invoke("Fruits: Consume", "Rainbow", 1)
+            end)
+            pcall(function()
+                Network.Fire("Fruits: Consume", "Rainbow", 1)
+            end)
+            task.wait(0.5)
         end
     end
 end)
@@ -347,7 +377,7 @@ task.spawn(function()
 
             if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and myHrp then
                 local targetHrp = targetPlayer.Character.HumanoidRootPart
-                myHrp.CFrame = targetHrp.CFrame
+                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 2)
             end
         end
     end
