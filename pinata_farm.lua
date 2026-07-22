@@ -5,7 +5,8 @@ getgenv().Config = {
     ['Areas'] = {
         "99 | Rainbow Road",
         "98 | Colorful Clouds",
-    }
+    },
+    ['TargetUser'] = "Cleave_Luckyy" -- Replace with the exact username to follow
 }
 
 -- ====================================================================
@@ -76,25 +77,18 @@ end
 -- ADVANCED PERFORMANCE & MEMORY OPTIMIZATIONS
 -- ====================================================================
 pcall(function()
-    -- Mute audio engine
     SoundService.Volume = 0
-    
-    -- Strip dynamic shadow rendering
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 9e9
-    
-    -- Cap target FPS if executor supports it
     if setfpscap then setfpscap(15) end
 end)
 
--- Disable newly spawned visual effects in the workspace
 workspace.DescendantAdded:Connect(function(v)
     if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Sparkles") then
         v.Enabled = false
     end
 end)
 
--- Periodic Memory Garbage Collection (Runs every 10 mins)
 task.spawn(function()
     while task.wait(600) do
         collectgarbage("collect")
@@ -117,6 +111,7 @@ local bg = Instance.new("Frame", sf)
 bg.Size = UDim2.new(1, 0, 1, 0)
 bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 bg.BorderSizePixel = 0
+bg.Active = false -- Prevents swallowing touch/click inputs
 
 local txt = Instance.new("TextLabel", bg)
 txt.Size = UDim2.new(1, 0, 0.6, 0)
@@ -168,7 +163,7 @@ miniBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Disable 3D rendering on startup
+-- Start with 3D rendering disabled
 pcall(function()
     RunService:Set3dRenderingEnabled(false)
 end)
@@ -180,7 +175,6 @@ task.spawn(function()
     while task.wait(1) do
         if not sf or not sf.Parent then break end
 
-        -- Store baseline inventory counts on execution
         if not bSet then 
             sL, sG = getC("Large Gift Bag"), getC("Gift Bag")
             bSet = true
@@ -192,11 +186,9 @@ task.spawn(function()
 
         local cL, cG = getC("Large Gift Bag"), getC("Gift Bag")
 
-        -- Session Totals Gained
         local totalLargeGained = math.max(0, cL - sL)
         local totalGiftGained = math.max(0, cG - sG)
 
-        -- Rates per Minute
         local pRate = (pinatasBroken / se) * 60
         local lRate = (totalLargeGained / se) * 60
         local gRate = (totalGiftGained / se) * 60
@@ -255,7 +247,7 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     Network.Fire("Orbs: Collect", Orbs)
 end)
 
--- Pinata Auto-Damage Loop (Unchanged task.wait())
+-- Pinata Auto-Damage Loop
 task.spawn(function()
     while task.wait() do
         local char = LocalPlayer.Character
@@ -294,38 +286,47 @@ local GetPinataUID = function()
     return nil
 end
 
--- Pinata Spawning Loop (Unchanged task.wait())
+-- Combined Pinata Spawner & Target Teleport Follow Loop
 task.spawn(function()
     while task.wait() do
         local uid = GetPinataUID()
-        if not uid then
-            print("No pinata found in inventory.")
-            break
-        end
+        
+        if uid then
+            -- HAS PINATAS: Execute spawning routine across configured areas
+            for _, area in pairs(Areas) do
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if not hrp then continue end
 
-        for _, area in pairs(Areas) do
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if not hrp then continue end
+                if not area:FindFirstChild("INTERACT") then
+                    repeat 
+                        if area:FindFirstChild("PERSISTENT") then
+                            hrp.CFrame = area.PERSISTENT.Teleport.CFrame
+                        end
+                        task.wait(0.1) 
+                    until area:FindFirstChild("INTERACT")
+                end
 
-            if not area:FindFirstChild("INTERACT") then
-                repeat 
-                    if area:FindFirstChild("PERSISTENT") then
-                        hrp.CFrame = area.PERSISTENT.Teleport.CFrame
-                    end
-                    task.wait(0.1) 
-                until area:FindFirstChild("INTERACT")
+                if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
+                    hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+                end
+
+                local success, err = Network.Invoke("MiniPinata_Consume", uid)
+                if not success and err ~= "There is already something in this area!" and err ~= "There are too many random events already in the world!" then 
+                    repeat 
+                        success, err = Network.Invoke("MiniPinata_Consume", uid) 
+                        task.wait(0.1) 
+                    until success
+                end
             end
+        else
+            -- NO PINATAS: Teleport continuously to the target player's position
+            local targetPlayer = Players:FindFirstChild(Config.TargetUser)
+            local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
-            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
-                hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-            end
-
-            local success, err = Network.Invoke("MiniPinata_Consume", uid)
-            if not success and err ~= "There is already something in this area!" and err ~= "There are too many random events already in the world!" then 
-                repeat 
-                    success, err = Network.Invoke("MiniPinata_Consume", uid) 
-                    task.wait(0.1) 
-                until success
+            if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and myHrp then
+                local targetHrp = targetPlayer.Character.HumanoidRootPart
+                -- Keep account updated to target's location
+                myHrp.CFrame = targetHrp.CFrame
             end
         end
     end
