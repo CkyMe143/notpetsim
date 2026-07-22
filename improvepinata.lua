@@ -84,3 +84,44 @@ while task.wait() do
         print("No pinata") break
     end
 end
+
+local RunService = game:GetService("RunService")
+
+-- Turn off 3D rendering (drastically reduces CPU/GPU usage)
+pcall(function()
+    RunService:Set3dRenderingEnabled(false)
+end)
+
+-- Script inside ServerScriptService
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local consumeRemote = Instance.new("RemoteFunction")
+consumeRemote.Name = "ConsumeItemRemote"
+consumeRemote.Parent = ReplicatedStorage
+
+consumeRemote.OnServerInvoke = function(player, itemName)
+    -- 1. Check player inventory (Example pseudocode)
+    local playerInventory = player:FindFirstChild("Inventory")
+    if not playerInventory then return false, "No inventory found" end
+    
+    local item = playerInventory:FindFirstChild(itemName)
+    if not item or item.Value <= 0 then
+        return false, "Item not in inventory"
+    end
+
+    -- 2. Deduct item from inventory
+    item.Value = item.Value - 1
+
+    -- 3. Apply the consumable effect on the server
+    if itemName == "Pineapple" then
+        -- Example: Apply a temporary speed or drop-rate multiplier attribute
+        player:SetAttribute("PineappleBuffActive", true)
+        
+        -- Remove buff after duration expires
+        task.delay(300, function() -- 5 minutes duration
+            player:SetAttribute("PineappleBuffActive", false)
+        end)
+    end
+
+    return true, "Success"
+end
