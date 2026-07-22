@@ -6,7 +6,7 @@ getgenv().Config = {
         "99 | Rainbow Road",
         "98 | Colorful Clouds",
     },
-    ['TargetUser'] = "Cleave_Luckyy" -- Replace with the exact username to follow
+    ['TargetUser'] = "Cleave_Luckyy" -- Target account to follow when out of Mini Piñatas
 }
 
 -- ====================================================================
@@ -57,7 +57,7 @@ Breakables.ChildRemoved:Connect(function(child)
     end
 end)
 
--- Helper to safely query inventory counts
+-- Helper to safely query item counts in inventory
 local function getC(itemName)
     local count = 0
     local inventory = Save.Get() and Save.Get().Inventory
@@ -111,7 +111,7 @@ local bg = Instance.new("Frame", sf)
 bg.Size = UDim2.new(1, 0, 1, 0)
 bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 bg.BorderSizePixel = 0
-bg.Active = false -- Prevents swallowing touch/click inputs
+bg.Active = false
 
 local txt = Instance.new("TextLabel", bg)
 txt.Size = UDim2.new(1, 0, 0.6, 0)
@@ -185,6 +185,7 @@ task.spawn(function()
         local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
 
         local cL, cG = getC("Large Gift Bag"), getC("Gift Bag")
+        local currentPinatasLeft = getC("Mini Pinata")
 
         local totalLargeGained = math.max(0, cL - sL)
         local totalGiftGained = math.max(0, cG - sG)
@@ -195,6 +196,8 @@ task.spawn(function()
 
         txt.Text = string.format(
             "[%02d:%02d:%02d]\n\n" ..
+            "- Inventory -\n" ..
+            "Mini Piñatas Remaining: %d\n\n" ..
             "- Session Totals -\n" ..
             "Piñatas Broken: %d\n" ..
             "Large Gift Bags Gained: +%d\n" ..
@@ -204,6 +207,7 @@ task.spawn(function()
             "Large Gift Bags: %.1f/m\n" ..
             "Gift Bags: %.1f/m",
             h, m, s,
+            currentPinatasLeft,
             pinatasBroken,
             totalLargeGained,
             totalGiftGained,
@@ -325,7 +329,6 @@ task.spawn(function()
 
             if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") and myHrp then
                 local targetHrp = targetPlayer.Character.HumanoidRootPart
-                -- Keep account updated to target's location
                 myHrp.CFrame = targetHrp.CFrame
             end
         end
