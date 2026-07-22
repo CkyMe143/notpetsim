@@ -33,6 +33,12 @@ local Client = Library:WaitForChild("Client")
 local Network = require(Client.Network)
 local Save = require(Client.Save)
 
+-- Official Client Fruit Command Module
+local FruitCmds
+pcall(function()
+    FruitCmds = require(Client:WaitForChild("FruitCmds"))
+end)
+
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
 
@@ -50,14 +56,7 @@ end
 local st = os.time()
 local bSet = false
 local sL, sG = 0, 0
-local pinatasBroken = 0
-
--- Track when a Piñata model is destroyed/removed from the world
-Breakables.ChildRemoved:Connect(function(child)
-    if child:IsA("Model") and child:GetAttribute("BreakableID") == "Pinata" then
-        pinatasBroken = pinatasBroken + 1
-    end
-end)
+local pinatasSpawned = 0 -- Tracks only successfully spawned Mini Piñatas by this account
 
 -- Helper to safely query item counts in inventory
 local function getC(itemName)
@@ -194,7 +193,7 @@ task.spawn(function()
         local totalLargeGained = math.max(0, cL - sL)
         local totalGiftGained = math.max(0, cG - sG)
 
-        local pRate = (pinatasBroken / se) * 60
+        local pRate = (pinatasSpawned / se) * 60
         local lRate = (totalLargeGained / se) * 60
         local gRate = (totalGiftGained / se) * 60
 
@@ -204,17 +203,17 @@ task.spawn(function()
             "Mini Piñatas Remaining: %d\n" ..
             "Pineapples: %d | Rainbow Fruits: %d\n\n" ..
             "- Session Totals -\n" ..
-            "Piñatas Broken: %d\n" ..
+            "Piñatas Spawned: %d\n" ..
             "Large Gift Bags Gained: +%d\n" ..
             "Gift Bags Gained: +%d\n\n" ..
             "- Rates -\n" ..
-            "Piñatas: %.1f/m\n" ..
+            "Piñatas Spawned: %.1f/m\n" ..
             "Large Gift Bags: %.1f/m\n" ..
             "Gift Bags: %.1f/m",
             h, m, s,
             currentPinatasLeft,
             currentPineapples, currentRainbows,
-            pinatasBroken,
+            pinatasSpawned,
             totalLargeGained,
             totalGiftGained,
             pRate,
@@ -243,9 +242,9 @@ LocalPlayer.Idled:Connect(function()
     end)
 end)
 
--- Backup pulse loop every 120 seconds
+-- Backup pulse loop every 12 seconds
 task.spawn(function()
-    while task.wait(120) do
+    while task.wait(12) do
         pcall(function()
             VirtualUser:CaptureController()
             VirtualUser:ClickButton2(Vector2.zero)
@@ -274,27 +273,31 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     Network.Fire("Orbs: Collect", Orbs)
 end)
 
--- Fixed Multi-Fruit Auto Eat Loop
+-- NATIVE CLIENT MODULE AUTO-EAT LOOP
 task.spawn(function()
     while task.wait(5) do
-        if Config.AutoEatPineapple and getC("Pineapple") > 0 then
-            pcall(function()
-                Network.Invoke("Fruits: Consume", "Pineapple", 1)
-            end)
-            pcall(function()
-                Network.Fire("Fruits: Consume", "Pineapple", 1)
-            end)
-            task.wait(0.5)
-        end
-        
-        if Config.AutoEatRainbow and getC("Rainbow") > 0 then
-            pcall(function()
-                Network.Invoke("Fruits: Consume", "Rainbow", 1)
-            end)
-            pcall(function()
-                Network.Fire("Fruits: Consume", "Rainbow", 1)
-            end)
-            task.wait(0.5)
+        -- 1. Native Client Module Execution
+        if FruitCmds and type(FruitCmds.Consume) == "function" then
+            if Config.AutoEatPineapple and getC("Pineapple") > 0 then
+                pcall(function() FruitCmds.Consume("Pineapple", 1) end)
+                task.wait(0.3)
+            end
+            if Config.AutoEatRainbow and getC("Rainbow") > 0 then
+                pcall(function() FruitCmds.Consume("Rainbow", 1) end)
+                task.wait(0.3)
+            end
+        else
+            -- 2. Direct Network Fallbacks
+            if Config.AutoEatPineapple and getC("Pineapple") > 0 then
+                pcall(function() Network.Invoke("Fruit: Consume", "Pineapple", 1) end)
+                pcall(function() Network.Invoke("Fruit_Consume", "Pineapple", 1) end)
+                task.wait(0.3)
+            end
+            if Config.AutoEatRainbow and getC("Rainbow") > 0 then
+                pcall(function() Network.Invoke("Fruit: Consume", "Rainbow", 1) end)
+                pcall(function() Network.Invoke("Fruit_Consume", "Rainbow", 1) end)
+                task.wait(0.3)
+            end
         end
     end
 end)
@@ -363,9 +366,14 @@ task.spawn(function()
                 end
 
                 local success, err = Network.Invoke("MiniPinata_Consume", uid)
-                if not success and err ~= "There is already something in this area!" and err ~= "There are too many random events already in the world!" then 
+                if success then
+                    pinatasSpawned = pinatasSpawned + 1
+                elseif err ~= "There is already something in this area!" and err ~= "There are too many random events already in the world!" then 
                     repeat 
                         success, err = Network.Invoke("MiniPinata_Consume", uid) 
+                        if success then
+                            pinatasSpawned = pinatasSpawned + 1
+                        end
                         task.wait(0.1) 
                     until success
                 end
