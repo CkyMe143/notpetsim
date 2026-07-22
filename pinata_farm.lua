@@ -6,7 +6,8 @@ getgenv().Config = {
         "99 | Rainbow Road",
         "98 | Colorful Clouds",
     },
-    ['TargetUser'] = "Cleave_Luckyy" -- Target account to follow when out of Mini Piñatas
+    ['TargetUser'] = "Cleave_Luckyy", -- Target account to follow when out of Mini Piñatas
+    ['AutoEatPineapple'] = true      -- Automatically eat Pineapples to maintain fruit buff
 }
 
 -- ====================================================================
@@ -186,6 +187,7 @@ task.spawn(function()
 
         local cL, cG = getC("Large Gift Bag"), getC("Gift Bag")
         local currentPinatasLeft = getC("Mini Pinata")
+        local currentPineapples = getC("Pineapple")
 
         local totalLargeGained = math.max(0, cL - sL)
         local totalGiftGained = math.max(0, cG - sG)
@@ -197,7 +199,8 @@ task.spawn(function()
         txt.Text = string.format(
             "[%02d:%02d:%02d]\n\n" ..
             "- Inventory -\n" ..
-            "Mini Piñatas Remaining: %d\n\n" ..
+            "Mini Piñatas Remaining: %d\n" ..
+            "Pineapples In Stock: %d\n\n" ..
             "- Session Totals -\n" ..
             "Piñatas Broken: %d\n" ..
             "Large Gift Bags Gained: +%d\n" ..
@@ -208,6 +211,7 @@ task.spawn(function()
             "Gift Bags: %.1f/m",
             h, m, s,
             currentPinatasLeft,
+            currentPineapples,
             pinatasBroken,
             totalLargeGained,
             totalGiftGained,
@@ -249,6 +253,20 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
         table.insert(Orbs, v.id) 
     end
     Network.Fire("Orbs: Collect", Orbs)
+end)
+
+-- Auto Eat Pineapple Loop
+task.spawn(function()
+    while task.wait(5) do
+        if Config.AutoEatPineapple and getC("Pineapple") > 0 then
+            pcall(function()
+                Network.Fire("Fruit: Consume", "Pineapple", 1)
+            end)
+            pcall(function()
+                Network.Fire("Fruit_Consume", "Pineapple", 1)
+            end)
+        end
+    end
 end)
 
 -- Pinata Auto-Damage Loop
