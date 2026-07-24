@@ -1,34 +1,36 @@
+-- Wait until game & local player are completely loaded before running anything
+if not game:IsLoaded() then game.Loaded:Wait() end
+
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
 -- ====================================================================
 -- CONFIGURATION
 -- ====================================================================
 getgenv().Config = {
     ['Areas'] = {
         "99 | Rainbow Road",
+        "98 | Colorful Clouds",
     },
     ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
-    ['TargetUsers'] = {              -- List of accounts to follow in order of priority
+    ['TargetUsers'] = {              -- Priority order for follow targets
         "Cleave_Luckyy",
-        "Karma_Luckyy",                -- Replace with secondary username
-        "Celestial_Luckyy"                 -- Add as many fallback usernames as needed
+        "BackupUser1"
     }
 }
 
 -- ====================================================================
 -- SERVICES & LOCAL VARIABLES
 -- ====================================================================
-local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local Players = game:GetService("Players")
 local VirtualUser = game:GetService("VirtualUser")
-local TeleportService = game:GetService("TeleportService")
 local CoreGui = game:GetService("CoreGui")
 local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
 
-local LocalPlayer = Players.LocalPlayer
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
-
 local Library = ReplicatedStorage:WaitForChild("Library")
 local Client = Library:WaitForChild("Client")
 
@@ -41,20 +43,15 @@ local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") 
 local Areas = {}
 for _, areaName in ipairs(Config.Areas) do
     local area = Map and Map:FindFirstChild(areaName)
-    if area then 
-        table.insert(Areas, area)
-    else 
-        warn("Area not found: " .. tostring(areaName)) 
-    end
+    if area then table.insert(Areas, area) end
 end
 
 -- Tracking state
 local st = os.time()
 local bSet = false
 local sL, sG = 0, 0
-local pinatasSpawned = 0 -- Tracks only successfully spawned Mini Piñatas by this account
+local pinatasSpawned = 0
 
--- Helper to safely query item counts in inventory
 local function getC(itemName)
     local count = 0
     local inventory = Save.Get() and Save.Get().Inventory
@@ -71,7 +68,7 @@ local function getC(itemName)
 end
 
 -- ====================================================================
--- ADVANCED PERFORMANCE & MEMORY OPTIMIZATIONS
+-- RAM & PERFORMANCE OPTIMIZATIONS
 -- ====================================================================
 pcall(function()
     SoundService.Volume = 0
@@ -80,23 +77,23 @@ pcall(function()
     if setfpscap then setfpscap(15) end
 end)
 
+-- Frequent Garbage Collection to prevent 2GB+ Memory Crashes
+task.spawn(function()
+    while task.wait(60) do
+        collectgarbage("collect")
+    end
+end)
+
+-- Disable heavy visual effects on spawn
 workspace.DescendantAdded:Connect(function(v)
     if v:IsA("ParticleEmitter") or v:IsA("Trail") or v:IsA("Sparkles") then
         v.Enabled = false
     end
 end)
 
-task.spawn(function()
-    while task.wait(600) do
-        collectgarbage("collect")
-    end
-end)
-
 -- ====================================================================
--- PERFORMANCE OVERLAY & SCREEN UI SETUP
+-- OVERLAY UI
 -- ====================================================================
-
--- Cleanup existing UI
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
@@ -108,7 +105,6 @@ local bg = Instance.new("Frame", sf)
 bg.Size = UDim2.new(1, 0, 1, 0)
 bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 bg.BorderSizePixel = 0
-bg.Active = false
 
 local txt = Instance.new("TextLabel", bg)
 txt.Size = UDim2.new(1, 0, 0.6, 0)
@@ -117,7 +113,7 @@ txt.BackgroundTransparency = 1
 txt.TextColor3 = Color3.fromRGB(255, 255, 255)
 txt.Font = Enum.Font.Code
 txt.TextSize = 15
-txt.Text = "Initializing session stats..."
+txt.Text = "Loading stats..."
 
 local btn = Instance.new("TextButton", bg)
 btn.Size = UDim2.new(0, 140, 0, 45)
@@ -160,13 +156,10 @@ miniBtn.MouseButton1Click:Connect(function()
     end)
 end)
 
--- Start with 3D rendering disabled
-pcall(function()
-    RunService:Set3dRenderingEnabled(false)
-end)
+pcall(function() RunService:Set3dRenderingEnabled(false) end)
 
 -- ====================================================================
--- STATS DISPLAY LOOP
+-- STATS LOOP
 -- ====================================================================
 task.spawn(function()
     while task.wait(1) do
@@ -211,17 +204,8 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- AUTOMATION HOOKS & LOOPS
+-- ANTI-AFK & AUTOMATION
 -- ====================================================================
-
--- REBUILT ANTI-AFK (Continuous Ticker)
-local getcons = getconnections or get_signal_cons
-if getcons then
-    for _, conn in pairs(getcons(LocalPlayer.Idled)) do
-        if conn.Disable then conn:Disable() elseif conn.Disconnect then conn:Disconnect() end
-    end
-end
-
 LocalPlayer.Idled:Connect(function()
     pcall(function()
         VirtualUser:CaptureController()
@@ -229,40 +213,26 @@ LocalPlayer.Idled:Connect(function()
     end)
 end)
 
--- Backup pulse loop every 120 seconds
-task.spawn(function()
-    while task.wait(120) do
-        pcall(function()
-            VirtualUser:CaptureController()
-            VirtualUser:ClickButton2(Vector2.zero)
-        end)
-    end
+pcall(function()
+    hookfunction(require(Client.PlayerPet).CalculateSpeedMultiplier, function() return 9999 end)
 end)
 
--- Max Pet Speed Hook
-hookfunction(require(Client.PlayerPet).CalculateSpeedMultiplier, function() 
-    return 9999 
-end)
-
--- Auto Lootbags & Orbs
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
-        Network.Fire("Lootbags_Claim", { lootbag.Name }) 
+        pcall(function() Network.Fire("Lootbags_Claim", { lootbag.Name }) end)
     end
 end)
 
 Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     local Orbs = {}
-    for _, v in ipairs(InfoTable) do 
-        table.insert(Orbs, v.id) 
-    end
-    Network.Fire("Orbs: Collect", Orbs)
+    for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
+    pcall(function() Network.Fire("Orbs: Collect", Orbs) end)
 end)
 
--- Pinata Auto-Damage Loop
+-- Auto-Damage Loop
 task.spawn(function()
-    while task.wait() do
+    while task.wait(0.1) do
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
@@ -271,7 +241,9 @@ task.spawn(function()
             if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
                 local pos = v:GetPivot().Position
                 if (pos - hrp.Position).Magnitude <= 250 then
-                    Network.UnreliableFire("Breakables_PlayerDealDamage", v.Name)
+                    pcall(function()
+                        Network.UnreliableFire("Breakables_PlayerDealDamage", v.Name)
+                    end)
                     task.wait(0.05)
                 end
             end
@@ -279,7 +251,7 @@ task.spawn(function()
     end
 end)
 
--- Pinata Inventory UID Getter
+-- Get Pinata UID
 local PinataUid = nil
 local GetPinataUID = function()
     local Misc = Save.Get() and Save.Get().Inventory.Misc
@@ -299,47 +271,42 @@ local GetPinataUID = function()
     return nil
 end
 
--- Combined Pinata Spawner & Fallback Follow Loop
+-- Main Farming / Spawning / Following Loop
 task.spawn(function()
-    while task.wait() do
+    while task.wait(0.2) do
         local uid = GetPinataUID()
         
         if uid then
-            -- HAS PINATAS: Execute spawning routine across configured areas
             for _, area in pairs(Areas) do
                 local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
                 if not hrp then continue end
 
                 if not area:FindFirstChild("INTERACT") then
+                    local timeout = 0
                     repeat 
                         if area:FindFirstChild("PERSISTENT") then
                             hrp.CFrame = area.PERSISTENT.Teleport.CFrame
                         end
-                        task.wait(0.1) 
-                    until area:FindFirstChild("INTERACT")
+                        task.wait(0.2) 
+                        timeout = timeout + 1
+                    until area:FindFirstChild("INTERACT") or timeout > 15
                 end
 
                 if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
                     hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
                 end
 
-                local success, err = Network.Invoke("MiniPinata_Consume", uid)
+                local success, err
+                pcall(function()
+                    success, err = Network.Invoke("MiniPinata_Consume", uid)
+                end)
+
                 if success then
                     pinatasSpawned = pinatasSpawned + 1
-                elseif err ~= "There is already something in this area!" and err ~= "There are too many random events already in the world!" then 
-                    repeat 
-                        success, err = Network.Invoke("MiniPinata_Consume", uid) 
-                        if success then
-                            pinatasSpawned = pinatasSpawned + 1
-                        end
-                        task.wait(0.1) 
-                    until success
                 end
             end
         elseif Config.EnableFollow then
-            -- NO PINATAS & FOLLOW ENABLED: Find the highest priority available player
             local targetPlayer = nil
-            
             for _, username in ipairs(Config.TargetUsers) do
                 local p = Players:FindFirstChild(username)
                 if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
@@ -349,10 +316,8 @@ task.spawn(function()
             end
 
             local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
             if targetPlayer and myHrp then
-                local targetHrp = targetPlayer.Character.HumanoidRootPart
-                myHrp.CFrame = targetHrp.CFrame * CFrame.new(0, 0, 2)
+                myHrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
             end
         end
     end
