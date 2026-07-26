@@ -11,12 +11,12 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 getgenv().Config = {
     ['Areas'] = {
         "99 | Rainbow Road",
-        
+
     },
     ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
     ['TargetUsers'] = {              -- Priority order for follow targets
         "Cleave_Luckyy",
-        "Karma_Luckyy"
+        "BackupUser1"
     }
 }
 
@@ -54,9 +54,9 @@ local pinatasSpawned = 0
 
 local function getC(itemName)
     local count = 0
-    local inventory = Save.Get() and Save.Get().Inventory
-    if inventory then
-        for _, category in pairs(inventory) do
+    local success, saveData = pcall(function() return Save.Get() end)
+    if success and saveData and saveData.Inventory then
+        for _, category in pairs(saveData.Inventory) do
             for _, item in pairs(category) do
                 if type(item) == "table" and item.id == itemName then
                     count = count + (item._am or 1)
@@ -77,7 +77,7 @@ pcall(function()
     if setfpscap then setfpscap(15) end
 end)
 
--- Frequent Garbage Collection to prevent 2GB+ Memory Crashes
+-- Frequent Garbage Collection to prevent RAM Crashes
 task.spawn(function()
     while task.wait(60) do
         collectgarbage("collect")
@@ -159,22 +159,29 @@ end)
 pcall(function() RunService:Set3dRenderingEnabled(false) end)
 
 -- ====================================================================
--- STATS LOOP
+-- STATS LOOP (FIXED INITIALIZATION)
 -- ====================================================================
 task.spawn(function()
-    while task.wait(1) do
-        if not sf or not sf.Parent then break end
-
-        if not bSet then 
-            sL, sG = getC("Large Gift Bag"), getC("Gift Bag")
+    -- Wait safely for Save.Get() to return valid inventory data before reading
+    repeat
+        task.wait(0.5)
+        local ok, sData = pcall(function() return Save.Get() end)
+        if ok and sData and sData.Inventory then
+            sL = getC("Large Gift Bag")
+            sG = getC("Gift Bag")
             bSet = true
         end
+    until bSet
+
+    while task.wait(1) do
+        if not sf or not sf.Parent then break end
 
         local el = os.time() - st 
         local se = el > 0 and el or 1
         local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
 
-        local cL, cG = getC("Large Gift Bag"), getC("Gift Bag")
+        local cL = getC("Large Gift Bag")
+        local cG = getC("Gift Bag")
         local currentPinatasLeft = getC("Mini Pinata")
 
         local totalLargeGained = math.max(0, cL - sL)
@@ -254,8 +261,12 @@ end)
 -- Get Pinata UID
 local PinataUid = nil
 local GetPinataUID = function()
-    local Misc = Save.Get() and Save.Get().Inventory.Misc
-    if not Misc then return nil end
+    local success, saveData = pcall(function() return Save.Get() end)
+    if not success or not saveData or not saveData.Inventory or not saveData.Inventory.Misc then 
+        return nil 
+    end
+    
+    local Misc = saveData.Inventory.Misc
 
     if PinataUid and Misc[PinataUid] and Misc[PinataUid].id == "Mini Pinata" then
         return PinataUid
