@@ -79,11 +79,18 @@ local function isPinataActive()
     return false
 end
 
--- Force Teleport to Area 99 safely using PS99 Zone System
-local function teleportToArea99()
-    pcall(function()
-        local ZoneCmd = Network.Invoke("Zones_RequestTeleport", Config.AreaName)
-    end)
+-- Safely find Area 99 CFrame without crashing
+local function getArea99CFrame()
+    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+    if mapFolder then
+        local area = mapFolder:FindFirstChild(Config.AreaName)
+        if area and area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
+            return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+        elseif area and area:FindFirstChild("PERSISTENT") then
+            return area.PERSISTENT.Teleport.CFrame
+        end
+    end
+    return nil
 end
 
 -- ====================================================================
@@ -226,7 +233,7 @@ task.spawn(function()
     end
 end)
 
--- Multi-Layered Bag Tracker (Workspace + Network Listener)
+-- Auto Lootbag Claiming + Safe Counter
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
@@ -241,11 +248,6 @@ workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
             Network.Fire("Lootbags_Claim", { lootbag.Name }) 
         end)
     end
-end)
-
--- Secondary Network Listener for direct inventory drops
-Network.Fired("Lootbags_Claim"):Connect(function(bagData)
-    giftBagsGained = giftBagsGained + 1
 end)
 
 -- Auto Orbs
@@ -282,7 +284,6 @@ end)
 
 -- Main Farming / Spawning / Following Loop
 local lastSpawnTime = 0
-local initialTeleportDone = false
 
 task.spawn(function()
     while task.wait(0.3) do
@@ -293,15 +294,13 @@ task.spawn(function()
         local activePinataExists = isPinataActive()
         local recentlySpawned = (os.time() - lastSpawnTime) < 3
 
-        -- Force teleport to Area 99 once at startup if piñatas are ready
-        if (pinataUid or activePinataExists) and not initialTeleportDone then
-            teleportToArea99()
-            initialTeleportDone = true
-            task.wait(1)
-        end
-
+        -- Priority 1: If we have piñatas or one is actively on screen
         if pinataUid or activePinataExists or recentlySpawned then
-            -- Try placing piñatas if none active
+            local areaCF = getArea99CFrame()
+            if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
+                hrp.CFrame = areaCF
+            end
+
             if pinataUid and not activePinataExists then
                 local success = false
                 pcall(function()
@@ -314,8 +313,8 @@ task.spawn(function()
                     task.wait(0.5)
                 end
             end
+        -- Priority 2: Only follow when out of piñatas
         elseif Config.EnableFollow then
-            -- Execute follow logic when out of piñatas
             local targetPlayer = nil
             for _, username in ipairs(Config.TargetUsers) do
                 local p = Players:FindFirstChild(username)
