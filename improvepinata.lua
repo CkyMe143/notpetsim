@@ -21,7 +21,7 @@ getgenv().Config = {
 -- ====================================================================
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
-local VirtualUser = game:GetService("VirtualUser")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
 local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
@@ -43,13 +43,17 @@ local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
 
--- Input detection to keep track of real idle time
+-- Reset user idle counter on screen
+local function resetIdleTimer()
+    lastInput = tick()
+end
+
 UIS.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed then lastInput = tick() end
+    if not gameProcessed then resetIdleTimer() end
 end)
 
 UIS.InputChanged:Connect(function(input, gameProcessed)
-    if not gameProcessed then lastInput = tick() end
+    if not gameProcessed then resetIdleTimer() end
 end)
 
 -- Safe function to search inventory ONLY for Mini Pinata UID
@@ -231,6 +235,33 @@ task.spawn(function()
 end)
 
 -- ====================================================================
+-- HARDWARE-LEVEL ANTI-AFK ENGINE
+-- ====================================================================
+task.spawn(function()
+    while task.wait(60) do -- Triggers hardware pulse every 2 minutes
+        pcall(function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            
+            -- Method 1: Hardware-level Key Events via VirtualInputManager
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.1)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+
+            -- Method 2: Brief Position Nudge (Physical Character Movement)
+            if hrp then
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
+                task.wait(0.1)
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.05)
+            end
+
+            -- Update internal UI tracker
+            resetIdleTimer()
+        end)
+    end
+end)
+
+-- ====================================================================
 -- STATS UPDATE LOOP (INCLUDES LIVE IDLE TIMER)
 -- ====================================================================
 task.spawn(function()
@@ -264,31 +295,10 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- AUTOMATION & ANTI-AFK HOOKS
+-- AUTOMATION HOOKS
 -- ====================================================================
 
--- 1. Anti-AFK Idle Interceptor
-LocalPlayer.Idled:Connect(function()
-    pcall(function()
-        VirtualUser:CaptureController()
-        VirtualUser:ClickButton2(Vector2.zero)
-    end)
-end)
-
--- 2. Anti-AFK Periodic Jump Loop (Every 5 minutes)
-task.spawn(function()
-    while true do
-        task.wait(300)
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChildOfClass("Humanoid") then
-            pcall(function()
-                char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
-            end)
-        end
-    end
-end)
-
--- Auto Lootbag Claimer (Claim physical drops from floor)
+-- Auto Lootbag Claimer
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
