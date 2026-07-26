@@ -9,7 +9,7 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- ====================================================================
 getgenv().Config = {
     ['AreaName'] = "99 | Rainbow Road", -- Strictly Area 99
-    ['EnableFollow'] = true,            -- Set to true to follow target player when out of piñatas
+    ['EnableFollow'] = true,            -- Follow target ONLY when truly out of piñatas
     ['TargetUsers'] = {                -- Priority order for follow targets
         "Cleave_Luckyy",
         "Karma_Luckyy"
@@ -49,7 +49,7 @@ local cachedPinataUid = nil
 local function getPinataUID()
     local ok, saveData = pcall(function() return Save.Get() end)
     if not ok or type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
-        return nil 
+        return cachedPinataUid 
     end
     
     local Misc = saveData.Inventory.Misc
@@ -65,6 +65,21 @@ local function getPinataUID()
         end
     end
     return nil
+end
+
+-- Check if an active Piñata is currently spawned in the break zone
+local function isPinataActive()
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    for _, v in pairs(Breakables:GetChildren()) do
+        if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
+            local pos = v:GetPivot().Position
+            if (pos - hrp.Position).Magnitude <= 250 then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 -- ====================================================================
@@ -197,7 +212,7 @@ end)
 -- 2. Anti-AFK Periodic Jump Loop (Every 5 minutes)
 task.spawn(function()
     while true do
-        task.wait(300) -- Waits 300 seconds (5 minutes)
+        task.wait(300)
         local char = LocalPlayer.Character
         if char and char:FindFirstChildOfClass("Humanoid") then
             pcall(function()
@@ -258,50 +273,43 @@ task.spawn(function()
     end
 end)
 
--- Main Farming / Spawning / Following Loop (AREA 99 ONLY)
+-- Main Farming / Spawning / Following Loop (FIXED STATE HANDLING)
+local lastSpawnTime = 0
+
 task.spawn(function()
     while task.wait(0.3) do
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
         local pinataUid = getPinataUID()
-        local spawnedAny = false
+        local activePinataExists = isPinataActive()
+        local recentlySpawned = (os.time() - lastSpawnTime) < 3 -- Lock position for 3s after spawning
 
-        if pinataUid and TargetArea then
-            -- Initial position setup for Area 99 if not in break zone
-            if not TargetArea:FindFirstChild("INTERACT") then
-                local timeout = 0
-                repeat 
-                    if TargetArea:FindFirstChild("PERSISTENT") then
-                        hrp.CFrame = TargetArea.PERSISTENT.Teleport.CFrame
-                    end
-                    task.wait(0.2) 
-                    timeout = timeout + 1
-                until TargetArea:FindFirstChild("INTERACT") or timeout > 10
-            end
-
-            if TargetArea:FindFirstChild("INTERACT") and TargetArea.INTERACT:FindFirstChild("BREAK_ZONES") then
+        -- If an active piñata exists, a UID is ready, OR we recently spawned one
+        if pinataUid or activePinataExists or recentlySpawned then
+            -- Position in Area 99
+            if TargetArea and TargetArea:FindFirstChild("INTERACT") and TargetArea.INTERACT:FindFirstChild("BREAK_ZONES") then
                 local breakZoneCF = TargetArea.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-                -- Move to break zone only if not already close enough
                 if (hrp.Position - breakZoneCF.Position).Magnitude > 15 then
                     hrp.CFrame = breakZoneCF
                 end
             end
 
-            local success = false
-            pcall(function()
-                success = Network.Invoke("MiniPinata_Consume", pinataUid)
-            end)
+            -- Only try consuming if no piñata is active and we have a valid UID
+            if pinataUid and not activePinataExists then
+                local success = false
+                pcall(function()
+                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
+                end)
 
-            if success then
-                pinatasSpawned = pinatasSpawned + 1
-                spawnedAny = true
-                task.wait(0.5)
+                if success then
+                    pinatasSpawned = pinatasSpawned + 1
+                    lastSpawnTime = os.time() -- Lock follow logic
+                    task.wait(0.5)
+                end
             end
-        end
-
-        -- If no piñata was consumed or out of piñatas, follow target player
-        if not spawnedAny and Config.EnableFollow then
+        elseif Config.EnableFollow then
+            -- Only executes when DEFINITELY out of piñatas AND none active in field
             local targetPlayer = nil
             for _, username in ipairs(Config.TargetUsers) do
                 local p = Players:FindFirstChild(username)
@@ -312,7 +320,7 @@ task.spawn(function()
             end
 
             if targetPlayer then
-                hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
+                hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
             end
         end
     end
