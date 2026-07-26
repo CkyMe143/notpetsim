@@ -15,7 +15,7 @@ getgenv().Config = {
     ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
     ['TargetUsers'] = {              -- Priority order for follow targets
         "Cleave_Luckyy",
-        "BackupUser1"
+        "Karma_Luckyy"
     }
 }
 
@@ -34,6 +34,7 @@ local Library = ReplicatedStorage:WaitForChild("Library")
 local Client = Library:WaitForChild("Client")
 
 local Network = require(Client.Network)
+local Save = require(Client.Save)
 
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
@@ -44,11 +45,34 @@ for _, areaName in ipairs(Config.Areas) do
     if area then table.insert(Areas, area) end
 end
 
--- TRACKING COUNTERS (No Save.Get required)
+-- TRACKING COUNTERS
 local st = os.time()
 local pinatasSpawned = 0
 local lootbagsClaimed = 0
 local orbsCollected = 0
+
+-- Safe function to search inventory ONLY for Mini Pinata UID
+local cachedPinataUid = nil
+local function getPinataUID()
+    local ok, saveData = pcall(function() return Save.Get() end)
+    if not ok or type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
+        return nil 
+    end
+    
+    local Misc = saveData.Inventory.Misc
+    if cachedPinataUid and Misc[cachedPinataUid] and Misc[cachedPinataUid].id == "Mini Pinata" then
+        return cachedPinataUid
+    end
+    
+    cachedPinataUid = nil
+    for uid, item in pairs(Misc) do
+        if type(item) == "table" and item.id == "Mini Pinata" then 
+            cachedPinataUid = uid 
+            return uid 
+        end
+    end
+    return nil
+end
 
 -- ====================================================================
 -- RAM & PERFORMANCE OPTIMIZATIONS
@@ -134,7 +158,7 @@ end)
 pcall(function() RunService:Set3dRenderingEnabled(false) end)
 
 -- ====================================================================
--- GUARANTEED STATS UPDATE LOOP
+-- STATS UPDATE LOOP
 -- ====================================================================
 task.spawn(function()
     while task.wait(1) do
@@ -219,41 +243,46 @@ task.spawn(function()
     end
 end)
 
--- Main Farming Loop
+-- Main Farming / Spawning / Following Loop
 task.spawn(function()
     while task.wait(0.3) do
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
+        local pinataUid = getPinataUID()
         local spawnedAny = false
 
-        for _, area in pairs(Areas) do
-            if not area:FindFirstChild("INTERACT") then
-                local timeout = 0
-                repeat 
-                    if area:FindFirstChild("PERSISTENT") then
-                        hrp.CFrame = area.PERSISTENT.Teleport.CFrame
-                    end
-                    task.wait(0.2) 
-                    timeout = timeout + 1
-                until area:FindFirstChild("INTERACT") or timeout > 10
-            end
+        if pinataUid then
+            for _, area in pairs(Areas) do
+                if not area:FindFirstChild("INTERACT") then
+                    local timeout = 0
+                    repeat 
+                        if area:FindFirstChild("PERSISTENT") then
+                            hrp.CFrame = area.PERSISTENT.Teleport.CFrame
+                        end
+                        task.wait(0.2) 
+                        timeout = timeout + 1
+                    until area:FindFirstChild("INTERACT") or timeout > 10
+                end
 
-            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
-                hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-            end
+                if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
+                    hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+                end
 
-            local success = false
-            pcall(function()
-                success = Network.Invoke("MiniPinata_Consume")
-            end)
+                local success = false
+                pcall(function()
+                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
+                end)
 
-            if success then
-                pinatasSpawned = pinatasSpawned + 1
-                spawnedAny = true
+                if success then
+                    pinatasSpawned = pinatasSpawned + 1
+                    spawnedAny = true
+                    task.wait(0.5)
+                end
             end
         end
 
+        -- If no piñata was consumed or out of piñatas, follow target player
         if not spawnedAny and Config.EnableFollow then
             local targetPlayer = nil
             for _, username in ipairs(Config.TargetUsers) do
