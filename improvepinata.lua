@@ -10,7 +10,7 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 getgenv().Config = {
     ['Areas'] = {
         "99 | Rainbow Road",
-        "98 | Colorful Clouds",
+
     },
     ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
     ['TargetUsers'] = {              -- Priority order for follow targets
