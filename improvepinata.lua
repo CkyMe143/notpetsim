@@ -10,12 +10,12 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 getgenv().Config = {
     ['AreaName'] = "99 | Rainbow Road", -- Strictly Area 99
     ['EnableFollow'] = true,            -- Follow target ONLY when truly out of piñatas
-    ['TargetUsers'] = {                -- Priority order for follow targets
+    ['TargetUsers'] = {                -- Main accounts that spawn piñatas (ONLY THESE WILL PING)
         "Cleave_Luckyy",
         "Karma_Luckyy"
     },
-    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8", -- Insert Webhook URL
-    ['DiscordUserId'] = "1256971111300726845"                           -- Insert Discord User ID for @mention
+    ['WebhookUrl'] = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Insert Webhook URL
+    ['DiscordUserId'] = ""                           -- Insert Discord User ID for @mention (e.g. "123456789012345678")
 }
 
 -- ====================================================================
@@ -114,10 +114,22 @@ local function getArea99CFrame()
 end
 
 -- ====================================================================
--- DISCORD WEBHOOK NOTIFIER (WITH 15-SECOND BUFFER)
+-- DISCORD WEBHOOK NOTIFIER (EXCLUSIVE TO TARGET USERS)
 -- ====================================================================
 local function sendDiscordWebhook()
-    -- Ignore ping if account started with 0 piñatas (15-second grace period)
+    -- 1. Check if local player is one of the designated TargetUsers
+    local isTargetUser = false
+    for _, username in ipairs(Config.TargetUsers) do
+        if LocalPlayer.Name:lower() == tostring(username):lower() then
+            isTargetUser = true
+            break
+        end
+    end
+
+    -- If this account is not in TargetUsers, skip sending the webhook completely
+    if not isTargetUser then return end
+
+    -- 2. Grace period check
     if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then 
         return 
     end
