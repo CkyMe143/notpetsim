@@ -177,6 +177,56 @@ end)
 pcall(function() RunService:Set3dRenderingEnabled(false) end)
 
 -- ====================================================================
+-- INVENTORY DELTA TRACKER (Accurate Gift Bag Counter)
+-- ====================================================================
+local lastGiftBagCount = nil
+local lastLargeGiftBagCount = nil
+
+task.spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            local saveData = Save.Get()
+            if saveData and saveData.Inventory and saveData.Inventory.Misc then
+                local currentGiftBags = 0
+                local currentLargeGiftBags = 0
+
+                for _, item in pairs(saveData.Inventory.Misc) do
+                    if type(item) == "table" and item.id then
+                        local itemId = tostring(item.id):lower()
+                        local amount = tonumber(item._am) or 1
+
+                        if itemId == "gift bag" or itemId == "giftbag" then
+                            currentGiftBags = currentGiftBags + amount
+                        elseif itemId == "large gift bag" or itemId == "largegiftbag" or itemId == "giant gift bag" then
+                            currentLargeGiftBags = currentLargeGiftBags + amount
+                        end
+                    end
+                end
+
+                -- Initialize base counts on first run
+                if lastGiftBagCount == nil then lastGiftBagCount = currentGiftBags end
+                if lastLargeGiftBagCount == nil then lastLargeGiftBagCount = currentLargeGiftBags end
+
+                -- Calculate gains (deltas)
+                if currentGiftBags > lastGiftBagCount then
+                    giftBagsGained = giftBagsGained + (currentGiftBags - lastGiftBagCount)
+                    lastGiftBagCount = currentGiftBags
+                elseif currentGiftBags < lastGiftBagCount then
+                    lastGiftBagCount = currentGiftBags -- Account for opening/trading bags
+                end
+
+                if currentLargeGiftBags > lastLargeGiftBagCount then
+                    largeGiftBagsGained = largeGiftBagsGained + (currentLargeGiftBags - lastLargeGiftBagCount)
+                    lastLargeGiftBagCount = currentLargeGiftBags
+                elseif currentLargeGiftBags < lastLargeGiftBagCount then
+                    lastLargeGiftBagCount = currentLargeGiftBags
+                end
+            end
+        end)
+    end
+end)
+
+-- ====================================================================
 -- STATS UPDATE LOOP
 -- ====================================================================
 task.spawn(function()
@@ -233,17 +283,10 @@ task.spawn(function()
     end
 end)
 
--- Auto Lootbag Claiming + Safe Counter
+-- Auto Lootbag Claimer (Claim physical drops from floor)
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
-        local name = lootbag.Name:lower()
-        if name:find("large") or name:find("giant") then
-            largeGiftBagsGained = largeGiftBagsGained + 1
-        else
-            giftBagsGained = giftBagsGained + 1
-        end
-
         pcall(function() 
             Network.Fire("Lootbags_Claim", { lootbag.Name }) 
         end)
