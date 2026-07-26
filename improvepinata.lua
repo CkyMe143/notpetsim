@@ -222,16 +222,20 @@ task.spawn(function()
     end
 end)
 
--- Auto Lootbags + Specific Bag Detection
+-- Auto Lootbags + Enhanced Bag Detection
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
         local name = lootbag.Name:lower()
-        if name:find("large") or name:find("giant") then
+        
+        -- Check for Large / Giant Gift Bags
+        if name:find("large") or name:find("giant") or name:find("big") then
             largeGiftBagsGained = largeGiftBagsGained + 1
-        elseif name:find("gift") or name:find("bag") then
+        -- Check for standard Gift Bags / Bags
+        elseif name:find("gift") or name:find("bag") or name:find("loot") then
             giftBagsGained = giftBagsGained + 1
         else
+            -- Catch-all fallback for any unclaimed bag model
             giftBagsGained = giftBagsGained + 1
         end
 
@@ -273,7 +277,7 @@ task.spawn(function()
     end
 end)
 
--- Main Farming / Spawning / Following Loop (FIXED STATE HANDLING)
+-- Main Farming / Spawning / Following Loop
 local lastSpawnTime = 0
 
 task.spawn(function()
