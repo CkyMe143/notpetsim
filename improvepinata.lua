@@ -8,12 +8,9 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- CONFIGURATION
 -- ====================================================================
 getgenv().Config = {
-    ['Areas'] = {
-        "99 | Rainbow Road",
-        "98 | Colorful Clouds",
-    },
-    ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
-    ['TargetUsers'] = {              -- Priority order for follow targets
+    ['AreaName'] = "99 | Rainbow Road", -- Strictly Area 99
+    ['EnableFollow'] = true,            -- Set to true to follow target player when out of piñatas
+    ['TargetUsers'] = {                -- Priority order for follow targets
         "Cleave_Luckyy",
         "Karma_Luckyy"
     }
@@ -39,17 +36,13 @@ local Save = require(Client.Save)
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
 
-local Areas = {}
-for _, areaName in ipairs(Config.Areas) do
-    local area = Map and Map:FindFirstChild(areaName)
-    if area then table.insert(Areas, area) end
-end
+local TargetArea = Map and Map:FindFirstChild(Config.AreaName)
 
 -- TRACKING COUNTERS
 local st = os.time()
 local pinatasSpawned = 0
-local lootbagsClaimed = 0
-local orbsCollected = 0
+local giftBagsGained = 0
+local largeGiftBagsGained = 0
 
 -- Safe function to search inventory ONLY for Mini Pinata UID
 local cachedPinataUid = nil
@@ -168,30 +161,32 @@ task.spawn(function()
             local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
 
             local pRate = (pinatasSpawned / se) * 60
-            local lRate = (lootbagsClaimed / se) * 60
-            local oRate = (orbsCollected / se) * 60
+            local gRate = (giftBagsGained / se) * 60
+            local lRate = (largeGiftBagsGained / se) * 60
 
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]\n\n" ..
                 "Mini Piñatas Spawned: %d\n" ..
                 "└ Rate: %.1f/min\n\n" ..
-                "Lootbags Claimed: %d\n" ..
+                "Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min\n\n" ..
-                "Orbs Collected: %d\n" ..
+                "Large Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min",
                 h, m, s,
                 pinatasSpawned, pRate,
-                lootbagsClaimed, lRate,
-                orbsCollected, oRate
+                giftBagsGained, gRate,
+                largeGiftBagsGained, lRate
             )
         end
     end
 end)
 
 -- ====================================================================
--- AUTOMATION & COUNTER HOOKS
+-- AUTOMATION & ANTI-AFK HOOKS
 -- ====================================================================
+
+-- 1. Anti-AFK Idle Interceptor
 LocalPlayer.Idled:Connect(function()
     pcall(function()
         VirtualUser:CaptureController()
@@ -199,18 +194,39 @@ LocalPlayer.Idled:Connect(function()
     end)
 end)
 
--- Auto Lootbags + Counter
+-- 2. Anti-AFK Periodic Jump Loop (Every 5 minutes)
+task.spawn(function()
+    while true do
+        task.wait(300) -- Waits 300 seconds (5 minutes)
+        local char = LocalPlayer.Character
+        if char and char:FindFirstChildOfClass("Humanoid") then
+            pcall(function()
+                char.Humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+            end)
+        end
+    end
+end)
+
+-- Auto Lootbags + Specific Bag Detection
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
+        local name = lootbag.Name:lower()
+        if name:find("large") or name:find("giant") then
+            largeGiftBagsGained = largeGiftBagsGained + 1
+        elseif name:find("gift") or name:find("bag") then
+            giftBagsGained = giftBagsGained + 1
+        else
+            giftBagsGained = giftBagsGained + 1
+        end
+
         pcall(function() 
             Network.Fire("Lootbags_Claim", { lootbag.Name }) 
-            lootbagsClaimed = lootbagsClaimed + 1
         end)
     end
 end)
 
--- Auto Orbs + Counter
+-- Auto Orbs
 Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     local Orbs = {}
     for _, v in ipairs(InfoTable) do 
@@ -218,7 +234,6 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     end
     pcall(function() 
         Network.Fire("Orbs: Collect", Orbs) 
-        orbsCollected = orbsCollected + #Orbs
     end)
 end)
 
@@ -243,7 +258,7 @@ task.spawn(function()
     end
 end)
 
--- Main Farming / Spawning / Following Loop
+-- Main Farming / Spawning / Following Loop (AREA 99 ONLY)
 task.spawn(function()
     while task.wait(0.3) do
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
@@ -252,33 +267,36 @@ task.spawn(function()
         local pinataUid = getPinataUID()
         local spawnedAny = false
 
-        if pinataUid then
-            for _, area in pairs(Areas) do
-                if not area:FindFirstChild("INTERACT") then
-                    local timeout = 0
-                    repeat 
-                        if area:FindFirstChild("PERSISTENT") then
-                            hrp.CFrame = area.PERSISTENT.Teleport.CFrame
-                        end
-                        task.wait(0.2) 
-                        timeout = timeout + 1
-                    until area:FindFirstChild("INTERACT") or timeout > 10
-                end
+        if pinataUid and TargetArea then
+            -- Initial position setup for Area 99 if not in break zone
+            if not TargetArea:FindFirstChild("INTERACT") then
+                local timeout = 0
+                repeat 
+                    if TargetArea:FindFirstChild("PERSISTENT") then
+                        hrp.CFrame = TargetArea.PERSISTENT.Teleport.CFrame
+                    end
+                    task.wait(0.2) 
+                    timeout = timeout + 1
+                until TargetArea:FindFirstChild("INTERACT") or timeout > 10
+            end
 
-                if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
-                    hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+            if TargetArea:FindFirstChild("INTERACT") and TargetArea.INTERACT:FindFirstChild("BREAK_ZONES") then
+                local breakZoneCF = TargetArea.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+                -- Move to break zone only if not already close enough
+                if (hrp.Position - breakZoneCF.Position).Magnitude > 15 then
+                    hrp.CFrame = breakZoneCF
                 end
+            end
 
-                local success = false
-                pcall(function()
-                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
-                end)
+            local success = false
+            pcall(function()
+                success = Network.Invoke("MiniPinata_Consume", pinataUid)
+            end)
 
-                if success then
-                    pinatasSpawned = pinatasSpawned + 1
-                    spawnedAny = true
-                    task.wait(0.5)
-                end
+            if success then
+                pinatasSpawned = pinatasSpawned + 1
+                spawnedAny = true
+                task.wait(0.5)
             end
         end
 
