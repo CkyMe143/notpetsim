@@ -13,7 +13,9 @@ getgenv().Config = {
     ['TargetUsers'] = {                -- Priority order for follow targets
         "Cleave_Luckyy",
         "Karma_Luckyy"
-    }
+    },
+    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8", -- Insert Webhook URL
+    ['DiscordUserId'] = "1256971111300726845"                           -- Insert Discord User ID for @mention
 }
 
 -- ====================================================================
@@ -26,6 +28,7 @@ local CoreGui = game:GetService("CoreGui")
 local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
 local UIS = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library")
@@ -38,10 +41,12 @@ local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 
 -- TRACKING COUNTERS
 local st = os.time()
+local scriptStartTime = os.time()
 local pinatasSpawned = 0
 local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
+local hasAlertedDepleted = false -- Anti-spam flag for Discord webhook
 
 -- Reset user idle counter on screen
 local function resetIdleTimer()
@@ -106,6 +111,52 @@ local function getArea99CFrame()
         end
     end
     return nil
+end
+
+-- ====================================================================
+-- DISCORD WEBHOOK NOTIFIER (WITH 15-SECOND BUFFER)
+-- ====================================================================
+local function sendDiscordWebhook()
+    -- Ignore ping if account started with 0 piñatas (15-second grace period)
+    if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then 
+        return 
+    end
+
+    local url = Config.WebhookUrl
+    if not url or url == "" or url == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
+
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not httpRequest then return end
+
+    local userPing = ""
+    if Config.DiscordUserId and Config.DiscordUserId ~= "" then
+        userPing = "<@" .. Config.DiscordUserId .. "> "
+    end
+
+    local payload = {
+        ["content"] = userPing .. "⚠️ **Mini Piñatas Depleted!**",
+        ["embeds"] = {{
+            ["title"] = "🪅 Account Out of Piñatas!",
+            ["color"] = 16711680, -- Red color
+            ["fields"] = {
+                { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
+                { ["name"] = "Piñatas Spawned", ["value"] = tostring(pinatasSpawned), ["inline"] = true },
+                { ["name"] = "Gift Bags", ["value"] = "+" .. tostring(giftBagsGained), ["inline"] = true },
+                { ["name"] = "Large Gift Bags", ["value"] = "+" .. tostring(largeGiftBagsGained), ["inline"] = true }
+            },
+            ["footer"] = { ["text"] = "Arceus X PS99 Tracker" },
+            ["timestamp"] = DateTime.now():ToIsoDate()
+        }}
+    }
+
+    pcall(function()
+        httpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
 end
 
 -- ====================================================================
@@ -238,24 +289,21 @@ end)
 -- HARDWARE-LEVEL ANTI-AFK ENGINE
 -- ====================================================================
 task.spawn(function()
-    while task.wait(60) do -- Triggers hardware pulse every 2 minutes
+    while task.wait(120) do
         pcall(function()
             local char = LocalPlayer.Character
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
             
-            -- Method 1: Hardware-level Key Events via VirtualInputManager
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
             task.wait(0.1)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
 
-            -- Method 2: Brief Position Nudge (Physical Character Movement)
             if hrp then
                 hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
                 task.wait(0.1)
                 hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.05)
             end
 
-            -- Update internal UI tracker
             resetIdleTimer()
         end)
     end
@@ -354,6 +402,8 @@ task.spawn(function()
 
         -- Priority 1: If we have piñatas or one is actively on screen
         if pinataUid or activePinataExists or recentlySpawned then
+            hasAlertedDepleted = false -- Reset alert flag if piñatas are found/added
+            
             local areaCF = getArea99CFrame()
             if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
                 hrp.CFrame = areaCF
@@ -371,19 +421,28 @@ task.spawn(function()
                     task.wait(0.5)
                 end
             end
-        -- Priority 2: Only follow when out of piñatas
-        elseif Config.EnableFollow then
-            local targetPlayer = nil
-            for _, username in ipairs(Config.TargetUsers) do
-                local p = Players:FindFirstChild(username)
-                if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                    targetPlayer = p
-                    break
-                end
+        -- Priority 2: Completely out of Piñatas
+        else
+            -- Check if we need to send a Webhook notification
+            if not hasAlertedDepleted then
+                hasAlertedDepleted = true
+                sendDiscordWebhook()
             end
 
-            if targetPlayer then
-                hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
+            -- Follow target when out of piñatas
+            if Config.EnableFollow then
+                local targetPlayer = nil
+                for _, username in ipairs(Config.TargetUsers) do
+                    local p = Players:FindFirstChild(username)
+                    if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        targetPlayer = p
+                        break
+                    end
+                end
+
+                if targetPlayer then
+                    hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
+                end
             end
         end
     end
