@@ -43,6 +43,15 @@ local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
 
+-- Input detection to keep track of real idle time
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed then lastInput = tick() end
+end)
+
+UIS.InputChanged:Connect(function(input, gameProcessed)
+    if not gameProcessed then lastInput = tick() end
+end)
+
 -- Safe function to search inventory ONLY for Mini Pinata UID
 local cachedPinataUid = nil
 local function getPinataUID()
@@ -112,48 +121,7 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- IDLE TIMER WIDGET (USER INPUT TRACKER)
--- ====================================================================
-if CG:FindFirstChild("IdleTimer") then CG.IdleTimer:Destroy() end
-
-local idleGui = Instance.new("ScreenGui")
-idleGui.Name = "IdleTimer"
-idleGui.ResetOnSpawn = false
-idleGui.Parent = CG
-
-local idleLabel = Instance.new("TextLabel")
-idleLabel.Size = UDim2.new(0, 200, 0, 40)
-idleLabel.Position = UDim2.new(0.5, -100, 0, 20)
-idleLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-idleLabel.BackgroundTransparency = 0.3
-idleLabel.TextColor3 = Color3.fromRGB(0, 255, 120)
-idleLabel.Font = Enum.Font.Code
-idleLabel.TextScaled = true
-idleLabel.Text = "Idle: 0s"
-idleLabel.Parent = idleGui
-Instance.new("UICorner", idleLabel).CornerRadius = UDim.new(0, 8)
-
--- Reset timer whenever the player provides input
-UIS.InputBegan:Connect(function(input, gameProcessed)
-    if not gameProcessed then
-        lastInput = tick()
-    end
-end)
-
-UIS.InputChanged:Connect(function(input, gameProcessed)
-    if not gameProcessed then
-        lastInput = tick()
-    end
-end)
-
--- Update the idle timer display live
-RunService.RenderStepped:Connect(function()
-    local idle = math.floor(tick() - lastInput)
-    idleLabel.Text = string.format("Idle: %ds", idle)
-end)
-
--- ====================================================================
--- OVERLAY UI
+-- OVERLAY UI (WITH EMBEDDED IDLE TIMER)
 -- ====================================================================
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
@@ -168,8 +136,8 @@ bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 bg.BorderSizePixel = 0
 
 local txt = Instance.new("TextLabel", bg)
-txt.Size = UDim2.new(1, 0, 0.6, 0)
-txt.Position = UDim2.new(0, 0, 0.15, 0)
+txt.Size = UDim2.new(1, 0, 0.65, 0)
+txt.Position = UDim2.new(0, 0, 0.1, 0)
 txt.BackgroundTransparency = 1
 txt.TextColor3 = Color3.fromRGB(0, 255, 120)
 txt.Font = Enum.Font.Code
@@ -263,10 +231,10 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- STATS UPDATE LOOP
+-- STATS UPDATE LOOP (INCLUDES LIVE IDLE TIMER)
 -- ====================================================================
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(0.2) do
         if sf and sf.Parent then
             local el = os.time() - st 
             local se = el > 0 and el or 1
@@ -275,17 +243,18 @@ task.spawn(function()
             local pRate = (pinatasSpawned / se) * 60
             local gRate = (giftBagsGained / se) * 60
             local lRate = (largeGiftBagsGained / se) * 60
+            local currentIdle = math.floor(tick() - lastInput)
 
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
-                "Uptime: [%02d:%02d:%02d]\n\n" ..
+                "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d\n" ..
                 "└ Rate: %.1f/min\n\n" ..
                 "Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min\n\n" ..
                 "Large Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min",
-                h, m, s,
+                h, m, s, currentIdle,
                 pinatasSpawned, pRate,
                 giftBagsGained, gRate,
                 largeGiftBagsGained, lRate
