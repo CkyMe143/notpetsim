@@ -25,6 +25,7 @@ local VirtualUser = game:GetService("VirtualUser")
 local CoreGui = game:GetService("CoreGui")
 local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
+local UIS = game:GetService("UserInputService")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library")
@@ -40,6 +41,7 @@ local st = os.time()
 local pinatasSpawned = 0
 local giftBagsGained = 0
 local largeGiftBagsGained = 0
+local lastInput = tick()
 
 -- Safe function to search inventory ONLY for Mini Pinata UID
 local cachedPinataUid = nil
@@ -107,6 +109,47 @@ task.spawn(function()
     while task.wait(60) do
         collectgarbage("collect")
     end
+end)
+
+-- ====================================================================
+-- IDLE TIMER WIDGET (USER INPUT TRACKER)
+-- ====================================================================
+if CG:FindFirstChild("IdleTimer") then CG.IdleTimer:Destroy() end
+
+local idleGui = Instance.new("ScreenGui")
+idleGui.Name = "IdleTimer"
+idleGui.ResetOnSpawn = false
+idleGui.Parent = CG
+
+local idleLabel = Instance.new("TextLabel")
+idleLabel.Size = UDim2.new(0, 200, 0, 40)
+idleLabel.Position = UDim2.new(0.5, -100, 0, 20)
+idleLabel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+idleLabel.BackgroundTransparency = 0.3
+idleLabel.TextColor3 = Color3.fromRGB(0, 255, 120)
+idleLabel.Font = Enum.Font.Code
+idleLabel.TextScaled = true
+idleLabel.Text = "Idle: 0s"
+idleLabel.Parent = idleGui
+Instance.new("UICorner", idleLabel).CornerRadius = UDim.new(0, 8)
+
+-- Reset timer whenever the player provides input
+UIS.InputBegan:Connect(function(input, gameProcessed)
+    if not gameProcessed then
+        lastInput = tick()
+    end
+end)
+
+UIS.InputChanged:Connect(function(input, gameProcessed)
+    if not gameProcessed then
+        lastInput = tick()
+    end
+end)
+
+-- Update the idle timer display live
+RunService.RenderStepped:Connect(function()
+    local idle = math.floor(tick() - lastInput)
+    idleLabel.Text = string.format("Idle: %ds", idle)
 end)
 
 -- ====================================================================
@@ -180,7 +223,6 @@ pcall(function() RunService:Set3dRenderingEnabled(false) end)
 -- DIRECT REWARD & POPUP SIGNAL HOOKS
 -- ====================================================================
 
--- Helper function to add counts based on text
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -193,7 +235,7 @@ local function processItemName(itemName, amount)
     end
 end
 
--- 1. Direct Server Network Hook
+-- Server Network Listener
 Network.Fired("Item_Gained"):Connect(function(itemId, amount)
     processItemName(itemId, amount)
 end)
@@ -206,7 +248,7 @@ Network.Fired("Lootbag: Claimed"):Connect(function(data)
     end
 end)
 
--- 2. GUI Popup Drop Reader (Reads item popups on screen)
+-- GUI Popup Drop Reader
 task.spawn(function()
     local pGui = LocalPlayer:WaitForChild("PlayerGui")
     pGui.ChildAdded:Connect(function(child)
