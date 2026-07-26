@@ -34,9 +34,6 @@ local Network = require(Client.Network)
 local Save = require(Client.Save)
 
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
-local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
-
-local TargetArea = Map and Map:FindFirstChild(Config.AreaName)
 
 -- TRACKING COUNTERS
 local st = os.time()
@@ -80,6 +77,13 @@ local function isPinataActive()
         end
     end
     return false
+end
+
+-- Force Teleport to Area 99 safely using PS99 Zone System
+local function teleportToArea99()
+    pcall(function()
+        local ZoneCmd = Network.Invoke("Zones_RequestTeleport", Config.AreaName)
+    end)
 end
 
 -- ====================================================================
@@ -222,20 +226,14 @@ task.spawn(function()
     end
 end)
 
--- Auto Lootbags + Enhanced Bag Detection
+-- Multi-Layered Bag Tracker (Workspace + Network Listener)
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
         local name = lootbag.Name:lower()
-        
-        -- Check for Large / Giant Gift Bags
-        if name:find("large") or name:find("giant") or name:find("big") then
+        if name:find("large") or name:find("giant") then
             largeGiftBagsGained = largeGiftBagsGained + 1
-        -- Check for standard Gift Bags / Bags
-        elseif name:find("gift") or name:find("bag") or name:find("loot") then
-            giftBagsGained = giftBagsGained + 1
         else
-            -- Catch-all fallback for any unclaimed bag model
             giftBagsGained = giftBagsGained + 1
         end
 
@@ -243,6 +241,11 @@ workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
             Network.Fire("Lootbags_Claim", { lootbag.Name }) 
         end)
     end
+end)
+
+-- Secondary Network Listener for direct inventory drops
+Network.Fired("Lootbags_Claim"):Connect(function(bagData)
+    giftBagsGained = giftBagsGained + 1
 end)
 
 -- Auto Orbs
@@ -279,6 +282,7 @@ end)
 
 -- Main Farming / Spawning / Following Loop
 local lastSpawnTime = 0
+local initialTeleportDone = false
 
 task.spawn(function()
     while task.wait(0.3) do
@@ -287,19 +291,17 @@ task.spawn(function()
 
         local pinataUid = getPinataUID()
         local activePinataExists = isPinataActive()
-        local recentlySpawned = (os.time() - lastSpawnTime) < 3 -- Lock position for 3s after spawning
+        local recentlySpawned = (os.time() - lastSpawnTime) < 3
 
-        -- If an active piñata exists, a UID is ready, OR we recently spawned one
+        -- Force teleport to Area 99 once at startup if piñatas are ready
+        if (pinataUid or activePinataExists) and not initialTeleportDone then
+            teleportToArea99()
+            initialTeleportDone = true
+            task.wait(1)
+        end
+
         if pinataUid or activePinataExists or recentlySpawned then
-            -- Position in Area 99
-            if TargetArea and TargetArea:FindFirstChild("INTERACT") and TargetArea.INTERACT:FindFirstChild("BREAK_ZONES") then
-                local breakZoneCF = TargetArea.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-                if (hrp.Position - breakZoneCF.Position).Magnitude > 15 then
-                    hrp.CFrame = breakZoneCF
-                end
-            end
-
-            -- Only try consuming if no piñata is active and we have a valid UID
+            -- Try placing piñatas if none active
             if pinataUid and not activePinataExists then
                 local success = false
                 pcall(function()
@@ -308,12 +310,12 @@ task.spawn(function()
 
                 if success then
                     pinatasSpawned = pinatasSpawned + 1
-                    lastSpawnTime = os.time() -- Lock follow logic
+                    lastSpawnTime = os.time()
                     task.wait(0.5)
                 end
             end
         elseif Config.EnableFollow then
-            -- Only executes when DEFINITELY out of piñatas AND none active in field
+            -- Execute follow logic when out of piñatas
             local targetPlayer = nil
             for _, username in ipairs(Config.TargetUsers) do
                 local p = Players:FindFirstChild(username)
