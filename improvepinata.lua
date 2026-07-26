@@ -10,7 +10,7 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 getgenv().Config = {
     ['Areas'] = {
         "99 | Rainbow Road",
-
+        "98 | Colorful Clouds",
     },
     ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
     ['TargetUsers'] = {              -- Priority order for follow targets
@@ -34,7 +34,6 @@ local Library = ReplicatedStorage:WaitForChild("Library")
 local Client = Library:WaitForChild("Client")
 
 local Network = require(Client.Network)
-local Save = require(Client.Save)
 
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
@@ -45,26 +44,11 @@ for _, areaName in ipairs(Config.Areas) do
     if area then table.insert(Areas, area) end
 end
 
--- Tracking state
+-- TRACKING COUNTERS (No Save.Get required)
 local st = os.time()
-local sL, sG = 0, 0
 local pinatasSpawned = 0
-
--- Safe function to query inventory count
-local function getC(itemName)
-    local count = 0
-    local ok, saveData = pcall(function() return Save.Get() end)
-    if ok and type(saveData) == "table" and saveData.Inventory then
-        for _, category in pairs(saveData.Inventory) do
-            for _, item in pairs(category) do
-                if type(item) == "table" and item.id == itemName then
-                    count = count + (item._am or 1)
-                end
-            end
-        end
-    end
-    return count
-end
+local lootbagsClaimed = 0
+local orbsCollected = 0
 
 -- ====================================================================
 -- RAM & PERFORMANCE OPTIMIZATIONS
@@ -101,10 +85,10 @@ local txt = Instance.new("TextLabel", bg)
 txt.Size = UDim2.new(1, 0, 0.6, 0)
 txt.Position = UDim2.new(0, 0, 0.15, 0)
 txt.BackgroundTransparency = 1
-txt.TextColor3 = Color3.fromRGB(255, 255, 255)
+txt.TextColor3 = Color3.fromRGB(0, 255, 120)
 txt.Font = Enum.Font.Code
 txt.TextSize = 15
-txt.Text = "Initializing stats (updates every 10s)..."
+txt.Text = "Starting Session Tracker..."
 
 local btn = Instance.new("TextButton", bg)
 btn.Size = UDim2.new(0, 140, 0, 45)
@@ -149,60 +133,40 @@ end)
 
 pcall(function() RunService:Set3dRenderingEnabled(false) end)
 
--- Function to format stats text
-local function buildStatsText()
-    local el = os.time() - st 
-    local se = el > 0 and el or 1
-    local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
-
-    local cL = getC("Large Gift Bag")
-    local cG = getC("Gift Bag")
-    local currentPinatasLeft = getC("Mini Pinata")
-
-    local totalLargeGained = math.max(0, cL - sL)
-    local totalGiftGained = math.max(0, cG - sG)
-
-    local pRate = (pinatasSpawned / se) * 60
-    local lRate = (totalLargeGained / se) * 60
-    local gRate = (totalGiftGained / se) * 60
-
-    return string.format(
-        "[%02d:%02d:%02d]\n\n" ..
-        "Mini Piñatas Left: %d | Total Spawned: %d\n" ..
-        "└ Rate: %.1f/m\n\n" ..
-        "Large Gift Bags Left: %d | Gained: +%d\n" ..
-        "└ Rate: %.1f/m\n\n" ..
-        "Gift Bags Left: %d | Gained: +%d\n" ..
-        "└ Rate: %.1f/m",
-        h, m, s,
-        currentPinatasLeft, pinatasSpawned,
-        pRate,
-        cL, totalLargeGained,
-        lRate,
-        cG, totalGiftGained,
-        gRate
-    )
-end
-
 -- ====================================================================
--- STATS LOOP (SLOW 10-SECOND REFRESH TO PREVENT FREEZING)
+-- GUARANTEED STATS UPDATE LOOP
 -- ====================================================================
 task.spawn(function()
-    task.wait(5) -- Delay to let save data settle
-    sL = getC("Large Gift Bag")
-    sG = getC("Gift Bag")
-
-    while task.wait(10) do
+    while task.wait(1) do
         if sf and sf.Parent then
-            pcall(function()
-                txt.Text = buildStatsText()
-            end)
+            local el = os.time() - st 
+            local se = el > 0 and el or 1
+            local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
+
+            local pRate = (pinatasSpawned / se) * 60
+            local lRate = (lootbagsClaimed / se) * 60
+            local oRate = (orbsCollected / se) * 60
+
+            txt.Text = string.format(
+                "=== ARCEUS X SESSION TRACKER ===\n" ..
+                "Uptime: [%02d:%02d:%02d]\n\n" ..
+                "Mini Piñatas Spawned: %d\n" ..
+                "└ Rate: %.1f/min\n\n" ..
+                "Lootbags Claimed: %d\n" ..
+                "└ Rate: %.1f/min\n\n" ..
+                "Orbs Collected: %d\n" ..
+                "└ Rate: %.1f/min",
+                h, m, s,
+                pinatasSpawned, pRate,
+                lootbagsClaimed, lRate,
+                orbsCollected, oRate
+            )
         end
     end
 end)
 
 -- ====================================================================
--- ANTI-AFK & AUTOMATION HOOKS
+-- AUTOMATION & COUNTER HOOKS
 -- ====================================================================
 LocalPlayer.Idled:Connect(function()
     pcall(function()
@@ -211,17 +175,27 @@ LocalPlayer.Idled:Connect(function()
     end)
 end)
 
+-- Auto Lootbags + Counter
 workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
     task.wait()
     if lootbag then 
-        pcall(function() Network.Fire("Lootbags_Claim", { lootbag.Name }) end)
+        pcall(function() 
+            Network.Fire("Lootbags_Claim", { lootbag.Name }) 
+            lootbagsClaimed = lootbagsClaimed + 1
+        end)
     end
 end)
 
+-- Auto Orbs + Counter
 Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     local Orbs = {}
-    for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
-    pcall(function() Network.Fire("Orbs: Collect", Orbs) end)
+    for _, v in ipairs(InfoTable) do 
+        table.insert(Orbs, v.id) 
+    end
+    pcall(function() 
+        Network.Fire("Orbs: Collect", Orbs) 
+        orbsCollected = orbsCollected + #Orbs
+    end)
 end)
 
 -- Auto-Damage Active Piñatas
@@ -245,64 +219,42 @@ task.spawn(function()
     end
 end)
 
--- Get Pinata UID
-local PinataUid = nil
-local GetPinataUID = function()
-    local ok, saveData = pcall(function() return Save.Get() end)
-    if not ok or not saveData or not saveData.Inventory or not saveData.Inventory.Misc then 
-        return nil 
-    end
-    
-    local Misc = saveData.Inventory.Misc
-    if PinataUid and Misc[PinataUid] and Misc[PinataUid].id == "Mini Pinata" then
-        return PinataUid
-    end
-    
-    PinataUid = nil
-    for uid, v in pairs(Misc) do
-        if v.id == "Mini Pinata" then 
-            PinataUid = uid 
-            return uid 
-        end
-    end
-    return nil
-end
-
--- Main Farming / Spawning / Following Loop
+-- Main Farming Loop
 task.spawn(function()
     while task.wait(0.3) do
-        local uid = GetPinataUID()
-        
-        if uid then
-            for _, area in pairs(Areas) do
-                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if not hrp then continue end
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
 
-                if not area:FindFirstChild("INTERACT") then
-                    local timeout = 0
-                    repeat 
-                        if area:FindFirstChild("PERSISTENT") then
-                            hrp.CFrame = area.PERSISTENT.Teleport.CFrame
-                        end
-                        task.wait(0.2) 
-                        timeout = timeout + 1
-                    until area:FindFirstChild("INTERACT") or timeout > 15
-                end
+        local spawnedAny = false
 
-                if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
-                    hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-                end
-
-                local success, err
-                pcall(function()
-                    success, err = Network.Invoke("MiniPinata_Consume", uid)
-                end)
-
-                if success then
-                    pinatasSpawned = pinatasSpawned + 1
-                end
+        for _, area in pairs(Areas) do
+            if not area:FindFirstChild("INTERACT") then
+                local timeout = 0
+                repeat 
+                    if area:FindFirstChild("PERSISTENT") then
+                        hrp.CFrame = area.PERSISTENT.Teleport.CFrame
+                    end
+                    task.wait(0.2) 
+                    timeout = timeout + 1
+                until area:FindFirstChild("INTERACT") or timeout > 10
             end
-        elseif Config.EnableFollow then
+
+            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
+                hrp.CFrame = area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+            end
+
+            local success = false
+            pcall(function()
+                success = Network.Invoke("MiniPinata_Consume")
+            end)
+
+            if success then
+                pinatasSpawned = pinatasSpawned + 1
+                spawnedAny = true
+            end
+        end
+
+        if not spawnedAny and Config.EnableFollow then
             local targetPlayer = nil
             for _, username in ipairs(Config.TargetUsers) do
                 local p = Players:FindFirstChild(username)
@@ -312,9 +264,8 @@ task.spawn(function()
                 end
             end
 
-            local myHrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            if targetPlayer and myHrp then
-                myHrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
+            if targetPlayer then
+                hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame * CFrame.new(0, 0, 2)
             end
         end
     end
