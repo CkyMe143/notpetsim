@@ -10,22 +10,18 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 getgenv().Config = {
     ['Areas'] = {
         "99 | Rainbow Road",
-        
+        "98 | Colorful Clouds",
     },
     ['EnableFollow'] = true,          -- Set to true to follow target player, or false to stay put
     ['TargetUsers'] = {              -- Priority order for follow targets
         "Cleave_Luckyy",
         "BackupUser1"
-    },
-    -- DISCORD WEBHOOK MONITORING (Optional)
-    ['WebhookURL'] = "https://discord.com/api/webhooks/1510177445528080464/_H4pLXpWqaAZ7vpJ7ciWGwQjNv_USwrT18HzpC2Z3L8D_ua8eiuANYSF5unqMmcUbzcA",             -- Paste your Discord Webhook URL here to get stats sent to Discord
-    ['WebhookInterval'] = 300        -- How often to send updates to Discord in seconds (e.g., 300 = 5 minutes)
+    }
 }
 
 -- ====================================================================
 -- SERVICES & LOCAL VARIABLES
 -- ====================================================================
-local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local VirtualUser = game:GetService("VirtualUser")
@@ -51,7 +47,6 @@ end
 
 -- Tracking state
 local st = os.time()
-local bSet = false
 local sL, sG = 0, 0
 local pinatasSpawned = 0
 
@@ -190,10 +185,10 @@ local function buildStatsText()
 end
 
 -- ====================================================================
--- STATS LOOP (SLOW 10-SECOND REFRESH TO PREVENT ARCEUS X FREEZING)
+-- STATS LOOP (SLOW 10-SECOND REFRESH TO PREVENT FREEZING)
 -- ====================================================================
 task.spawn(function()
-    task.wait(5) -- Initial delay to let save data settle
+    task.wait(5) -- Delay to let save data settle
     sL = getC("Large Gift Bag")
     sG = getC("Gift Bag")
 
@@ -203,38 +198,6 @@ task.spawn(function()
                 txt.Text = buildStatsText()
             end)
         end
-    end
-end)
-
--- ====================================================================
--- DISCORD WEBHOOK LOGGING LOOP
--- ====================================================================
-task.spawn(function()
-    if Config.WebhookURL == "" or not Config.WebhookURL then return end
-
-    local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-
-    if not requestFunc then return end
-
-    while task.wait(Config.WebhookInterval or 300) do
-        pcall(function()
-            local statsMessage = buildStatsText()
-            local payload = HttpService:JSONEncode({
-                ["username"] = "PS99 Piñata Monitor",
-                ["embeds"] = {{
-                    ["title"] = "📊 Farming Session Update (" .. LocalPlayer.Name .. ")",
-                    ["description"] = "```\n" .. statsMessage .. "\n```",
-                    ["color"] = 65280
-                }}
-            })
-
-            requestFunc({
-                Url = Config.WebhookURL,
-                Method = "POST",
-                Headers = { ["Content-Type"] = "application/json" },
-                Body = payload
-            })
-        end)
     end
 end)
 
