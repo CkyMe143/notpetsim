@@ -17,7 +17,8 @@ getgenv().Config = {
     ['WebhookUrl'] = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Insert Webhook URL
     ['DiscordUserId'] = "",                          -- Insert Discord User ID for @mention (e.g. "123456789012345678")
     ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
-    ['LowRateThresholdSeconds'] = 600                -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['LowRateThresholdSeconds'] = 600,               -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['EnableAutoFruit'] = true                       -- Auto-Eat Pineapple & Rainbow Fruit
 }
 
 -- ====================================================================
@@ -93,6 +94,31 @@ local function getPinataUID()
     for uid, item in pairs(Misc) do
         if type(item) == "table" and item.id == "Mini Pinata" then 
             cachedPinataUid = uid 
+            return uid 
+        end
+    end
+    return nil
+end
+
+-- Universal Dynamic Fruit UID Finder (Pineapple & Rainbow Fruit)
+local cachedFruitUids = {}
+local function getFruitUID(fruitName)
+    local ok, saveData = pcall(function() return Save.Get() end)
+    if not ok or type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Fruit then 
+        return cachedFruitUids[fruitName] 
+    end
+    
+    local FruitFolder = saveData.Inventory.Fruit
+    local cachedUid = cachedFruitUids[fruitName]
+    
+    if cachedUid and FruitFolder[cachedUid] and (FruitFolder[cachedUid].id == fruitName or FruitFolder[cachedUid].id:find(fruitName)) then
+        return cachedUid
+    end
+    
+    cachedFruitUids[fruitName] = nil
+    for uid, item in pairs(FruitFolder) do
+        if type(item) == "table" and (item.id == fruitName or item.id == "Rainbow" or item.id:find(fruitName)) then 
+            cachedFruitUids[fruitName] = uid 
             return uid 
         end
     end
@@ -406,6 +432,24 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     pcall(function() 
         Network.Fire("Orbs: Collect", Orbs) 
     end)
+end)
+
+-- Auto-Eat Fruits Engine (Pineapple & Rainbow Fruit)
+task.spawn(function()
+    local targetFruits = { "Pineapple", "Rainbow Fruit" }
+    while task.wait(1.5) do
+        if Config.EnableAutoFruit then
+            for _, fruitName in ipairs(targetFruits) do
+                local fruitUid = getFruitUID(fruitName)
+                if fruitUid then
+                    pcall(function()
+                        Network.Invoke("Fruit_Consume", fruitUid, 1)
+                    end)
+                    task.wait(0.2)
+                end
+            end
+        end
+    end
 end)
 
 -- Auto-Damage Active Piñatas
