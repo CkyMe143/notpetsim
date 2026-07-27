@@ -15,13 +15,13 @@ getgenv().Config = {
         "Karma_Luckyy"
     },
     ['WebhookUrl'] = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Insert Webhook URL
-    ['DiscordUserId'] = "",                          -- Insert Discord User ID for @mention
+    ['DiscordUserId'] = "",                          -- Insert Discord User ID for @mention (e.g. "123456789012345678")
     ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
-    ['LowRateThresholdSeconds'] = 600               -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['LowRateThresholdSeconds'] = 600                -- Rejoin if rate stays below threshold for 10 mins (600s)
 }
 
 -- ====================================================================
--- SERVICES & SAFE MODULE INITIALIZATION
+-- SERVICES & LOCAL VARIABLES
 -- ====================================================================
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
@@ -34,26 +34,13 @@ local HttpService = game:GetService("HttpService")
 local TeleportService = game:GetService("TeleportService")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
-local Library = ReplicatedStorage:WaitForChild("Library", 15)
-local Client = Library and Library:WaitForChild("Client", 15)
+local Library = ReplicatedStorage:WaitForChild("Library")
+local Client = Library:WaitForChild("Client")
 
-if not Client then
-    warn("Failed to locate Client Library!")
-    return
-end
+local Network = require(Client.Network)
+local Save = require(Client.Save)
 
--- Safely require core network & save modules with retries
-local Network, Save
-for i = 1, 10 do
-    pcall(function()
-        Network = require(Client:WaitForChild("Network", 5))
-        Save = require(Client:WaitForChild("Save", 5))
-    end)
-    if Network and Save then break end
-    task.wait(1)
-end
-
-local Breakables = workspace:WaitForChild("__THINGS", 10) and workspace.__THINGS:WaitForChild("Breakables", 10)
+local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 
 -- TRACKING COUNTERS
 local st = os.time()
@@ -62,9 +49,10 @@ local pinatasSpawned = 0
 local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
-local hasAlertedDepleted = false 
-local lowRateStartTimestamp = nil 
+local hasAlertedDepleted = false -- Anti-spam flag for Discord webhook
+local lowRateStartTimestamp = nil -- Keeps track of when rate dropped below threshold
 
+-- Reset user idle counter on screen
 local function resetIdleTimer()
     lastInput = tick()
 end
@@ -77,6 +65,7 @@ UIS.InputChanged:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
+-- Function to safely handle rejoining
 local function rejoinServer()
     pcall(function()
         if #Players:GetPlayers() <= 1 then
@@ -87,14 +76,11 @@ local function rejoinServer()
     end)
 end
 
--- Safe Inventory Finder (Mini Piñata ONLY)
+-- Safe function to search inventory ONLY for Mini Pinata UID
 local cachedPinataUid = nil
 local function getPinataUID()
-    if not Save then return nil end
-    local saveData = nil
-    pcall(function() saveData = Save.Get() end)
-
-    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
+    local ok, saveData = pcall(function() return Save.Get() end)
+    if not ok or type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
         return cachedPinataUid 
     end
     
@@ -113,8 +99,8 @@ local function getPinataUID()
     return nil
 end
 
+-- Check if an active Piñata is currently spawned in the break zone
 local function isPinataActive()
-    if not Breakables then return false end
     local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
     if not hrp then return false end
     for _, v in pairs(Breakables:GetChildren()) do
@@ -128,22 +114,23 @@ local function isPinataActive()
     return false
 end
 
+-- Safely find Area 99 CFrame without crashing
 local function getArea99CFrame()
     local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
     if mapFolder then
         local area = mapFolder:FindFirstChild(Config.AreaName)
-        if area then
-            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") and area.INTERACT.BREAK_ZONES:FindFirstChild("BREAK_ZONE") then
-                return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-            elseif area:FindFirstChild("PERSISTENT") and area.PERSISTENT:FindFirstChild("Teleport") then
-                return area.PERSISTENT.Teleport.CFrame
-            end
+        if area and area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") then
+            return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+        elseif area and area:FindFirstChild("PERSISTENT") then
+            return area.PERSISTENT.Teleport.CFrame
         end
     end
     return nil
 end
 
--- Webhook Notifier
+-- ====================================================================
+-- DISCORD WEBHOOK NOTIFIER (EXCLUSIVE TO TARGET USERS)
+-- ====================================================================
 local function sendDiscordWebhook()
     local isTargetUser = false
     for _, username in ipairs(Config.TargetUsers) do
@@ -154,7 +141,10 @@ local function sendDiscordWebhook()
     end
 
     if not isTargetUser then return end
-    if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then return end
+
+    if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then 
+        return 
+    end
 
     local url = Config.WebhookUrl
     if not url or url == "" or url == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
@@ -162,13 +152,16 @@ local function sendDiscordWebhook()
     local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if not httpRequest then return end
 
-    local userPing = Config.DiscordUserId ~= "" and ("<@" .. Config.DiscordUserId .. "> ") or ""
+    local userPing = ""
+    if Config.DiscordUserId and Config.DiscordUserId ~= "" then
+        userPing = "<@" .. Config.DiscordUserId .. "> "
+    end
 
     local payload = {
         ["content"] = userPing .. "⚠️ **Mini Piñatas Depleted!**",
         ["embeds"] = {{
             ["title"] = "🪅 Account Out of Piñatas!",
-            ["color"] = 16711680,
+            ["color"] = 16711680, -- Red color
             ["fields"] = {
                 { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
                 { ["name"] = "Piñatas Spawned", ["value"] = tostring(pinatasSpawned), ["inline"] = true },
@@ -190,7 +183,9 @@ local function sendDiscordWebhook()
     end)
 end
 
--- Performance Optimizations
+-- ====================================================================
+-- RAM & PERFORMANCE OPTIMIZATIONS
+-- ====================================================================
 pcall(function()
     SoundService.Volume = 0
     Lighting.GlobalShadows = false
@@ -204,7 +199,9 @@ task.spawn(function()
     end
 end)
 
--- UI Setup
+-- ====================================================================
+-- OVERLAY UI (WITH EMBEDDED IDLE TIMER)
+-- ====================================================================
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
@@ -253,7 +250,7 @@ Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 6)
 
 btn.MouseButton1Click:Connect(function()
     pcall(function()
-        if RunService.Set3dRenderingEnabled then RunService:Set3dRenderingEnabled(true) end
+        RunService:Set3dRenderingEnabled(true)
         bg.Visible = false
         miniBtn.Visible = true
     end)
@@ -261,13 +258,18 @@ end)
 
 miniBtn.MouseButton1Click:Connect(function()
     pcall(function()
-        if RunService.Set3dRenderingEnabled then RunService:Set3dRenderingEnabled(false) end
+        RunService:Set3dRenderingEnabled(false)
         bg.Visible = true
         miniBtn.Visible = false
     end)
 end)
 
--- Track Rewards safely
+pcall(function() RunService:Set3dRenderingEnabled(false) end)
+
+-- ====================================================================
+-- DIRECT REWARD & POPUP SIGNAL HOOKS
+-- ====================================================================
+
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -280,43 +282,60 @@ local function processItemName(itemName, amount)
     end
 end
 
-if Network then
-    pcall(function()
-        Network.Fired("Item_Gained"):Connect(function(itemId, amount)
-            processItemName(itemId, amount)
-        end)
+-- Server Network Listener
+Network.Fired("Item_Gained"):Connect(function(itemId, amount)
+    processItemName(itemId, amount)
+end)
 
-        Network.Fired("Lootbag: Claimed"):Connect(function(data)
-            if type(data) == "table" then
-                processItemName(data.id or data.Item, data.amount or data.Amt)
-            else
-                processItemName(data, 1)
-            end
-        end)
+Network.Fired("Lootbag: Claimed"):Connect(function(data)
+    if type(data) == "table" then
+        processItemName(data.id or data.Item, data.amount or data.Amt)
+    else
+        processItemName(data, 1)
+    end
+end)
+
+-- GUI Popup Drop Reader
+task.spawn(function()
+    local pGui = LocalPlayer:WaitForChild("PlayerGui")
+    pGui.ChildAdded:Connect(function(child)
+        if child.Name:lower():find("loot") or child.Name:lower():find("item") or child.Name:lower():find("notify") then
+            child.DescendantAdded:Connect(function(desc)
+                if desc:IsA("TextLabel") and desc.Text ~= "" then
+                    processItemName(desc.Text, 1)
+                end
+            end)
+        end
     end)
-end
+end)
 
--- Anti-AFK
+-- ====================================================================
+-- HARDWARE-LEVEL ANTI-AFK ENGINE
+-- ====================================================================
 task.spawn(function()
     while task.wait(120) do
         pcall(function()
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
             task.wait(0.1)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
 
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
                 hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
                 task.wait(0.1)
                 hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.05)
             end
+
             resetIdleTimer()
         end)
     end
 end)
 
--- Stats Updates
+-- ====================================================================
+-- STATS UPDATE & LOW RATE DETECTOR LOOP
+-- ====================================================================
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -329,6 +348,7 @@ task.spawn(function()
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
 
+            -- Check for low rate after initial 10-minute warmup buffer
             if el > 600 and getPinataUID() then
                 if pRate < Config.MinPinataRate then
                     if not lowRateStartTimestamp then
@@ -340,7 +360,7 @@ task.spawn(function()
                         break
                     end
                 else
-                    lowRateStartTimestamp = nil
+                    lowRateStartTimestamp = nil -- Reset timer if rate recovers
                 end
             end
 
@@ -363,32 +383,34 @@ task.spawn(function()
     end
 end)
 
--- Auto Lootbags / Orbs
-if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
-    workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
-        task.wait()
-        if lootbag and Network then 
-            pcall(function() 
-                Network.Fire("Lootbags_Claim", { lootbag.Name }) 
-            end)
-        end
-    end)
-end
+-- ====================================================================
+-- AUTOMATION HOOKS
+-- ====================================================================
 
-if Network then
-    pcall(function()
-        Network.Fired("Orbs: Create"):Connect(function(InfoTable)
-            local Orbs = {}
-            for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
-            Network.Fire("Orbs: Collect", Orbs) 
+-- Auto Lootbag Claimer
+workspace.__THINGS:WaitForChild("Lootbags").ChildAdded:Connect(function(lootbag)
+    task.wait()
+    if lootbag then 
+        pcall(function() 
+            Network.Fire("Lootbags_Claim", { lootbag.Name }) 
         end)
-    end)
-end
+    end
+end)
 
--- Damage Active Pinata
+-- Auto Orbs
+Network.Fired("Orbs: Create"):Connect(function(InfoTable)
+    local Orbs = {}
+    for _, v in ipairs(InfoTable) do 
+        table.insert(Orbs, v.id) 
+    end
+    pcall(function() 
+        Network.Fire("Orbs: Collect", Orbs) 
+    end)
+end)
+
+-- Auto-Damage Active Piñatas
 task.spawn(function()
     while task.wait(0.1) do
-        if not Network or not Breakables then continue end
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
@@ -407,27 +429,28 @@ task.spawn(function()
     end
 end)
 
--- Main Farming Loop
+-- Main Farming / Spawning / Following Loop
 local lastSpawnTime = 0
+
 task.spawn(function()
     while task.wait(0.3) do
-        local char = LocalPlayer.Character
-        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
         local pinataUid = getPinataUID()
         local activePinataExists = isPinataActive()
         local recentlySpawned = (os.time() - lastSpawnTime) < 3
 
+        -- Priority 1: If we have piñatas or one is actively on screen
         if pinataUid or activePinataExists or recentlySpawned then
-            hasAlertedDepleted = false
+            hasAlertedDepleted = false -- Reset alert flag if piñatas are found/added
             
             local areaCF = getArea99CFrame()
             if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
                 hrp.CFrame = areaCF
             end
 
-            if pinataUid and not activePinataExists and Network then
+            if pinataUid and not activePinataExists then
                 local success = false
                 pcall(function()
                     success = Network.Invoke("MiniPinata_Consume", pinataUid)
@@ -439,27 +462,28 @@ task.spawn(function()
                     task.wait(0.5)
                 end
             end
+        -- Priority 2: Completely out of Piñatas
         else
+            -- Check if we need to send a Webhook notification
             if not hasAlertedDepleted then
                 hasAlertedDepleted = true
                 sendDiscordWebhook()
             end
 
+            -- Follow target when out of piñatas
             if Config.EnableFollow then
-                pcall(function()
-                    local targetPlayer = nil
-                    for _, username in ipairs(Config.TargetUsers) do
-                        local p = Players:FindFirstChild(username)
-                        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                            targetPlayer = p
-                            break
-                        end
+                local targetPlayer = nil
+                for _, username in ipairs(Config.TargetUsers) do
+                    local p = Players:FindFirstChild(username)
+                    if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                        targetPlayer = p
+                        break
                     end
+                end
 
-                    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
-                    end
-                end)
+                if targetPlayer then
+                    hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
+                end
             end
         end
     end
