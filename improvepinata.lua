@@ -17,7 +17,8 @@ getgenv().Config = {
     ['WebhookUrl'] = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Insert Webhook URL
     ['DiscordUserId'] = "",                          -- Insert Discord User ID for @mention (e.g. "123456789012345678")
     ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
-    ['LowRateThresholdSeconds'] = 600                -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['LowRateThresholdSeconds'] = 600,               -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['EnableAutoFruit'] = true                       -- Auto-Eat Pineapple & Rainbow Fruit
 }
 
 -- ====================================================================
@@ -37,8 +38,9 @@ local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library")
 local Client = Library:WaitForChild("Client")
 
-local Network = require(Client.Network)
-local Save = require(Client.Save)
+-- Wait for critical Client Modules
+local Network = require(Client:WaitForChild("Network"))
+local Save = require(Client:WaitForChild("Save"))
 
 local Breakables = workspace:WaitForChild("__THINGS"):WaitForChild("Breakables")
 
@@ -76,11 +78,20 @@ local function rejoinServer()
     end)
 end
 
--- Safe function to search inventory ONLY for Mini Pinata UID
+-- Safe function to search inventory ONLY for Mini Pinata UID with Save Loading Guard
 local cachedPinataUid = nil
 local function getPinataUID()
-    local ok, saveData = pcall(function() return Save.Get() end)
-    if not ok or type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
+    local saveData = nil
+    for i = 1, 3 do
+        local ok, res = pcall(function() return Save.Get() end)
+        if ok and type(res) == "table" and res.Inventory then
+            saveData = res
+            break
+        end
+        task.wait(0.2)
+    end
+
+    if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then 
         return cachedPinataUid 
     end
     
@@ -93,6 +104,31 @@ local function getPinataUID()
     for uid, item in pairs(Misc) do
         if type(item) == "table" and item.id == "Mini Pinata" then 
             cachedPinataUid = uid 
+            return uid 
+        end
+    end
+    return nil
+end
+
+-- Universal Dynamic Fruit UID Finder (Pineapple & Rainbow Fruit)
+local cachedFruitUids = {}
+local function getFruitUID(fruitName)
+    local ok, saveData = pcall(function() return Save.Get() end)
+    if not ok or type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Fruit then 
+        return cachedFruitUids[fruitName] 
+    end
+    
+    local FruitFolder = saveData.Inventory.Fruit
+    local cachedUid = cachedFruitUids[fruitName]
+    
+    if cachedUid and FruitFolder[cachedUid] and (FruitFolder[cachedUid].id == fruitName or FruitFolder[cachedUid].id:find(fruitName)) then
+        return cachedUid
+    end
+    
+    cachedFruitUids[fruitName] = nil
+    for uid, item in pairs(FruitFolder) do
+        if type(item) == "table" and (item.id == fruitName or item.id == "Rainbow" or item.id:find(fruitName)) then 
+            cachedFruitUids[fruitName] = uid 
             return uid 
         end
     end
@@ -129,7 +165,7 @@ local function getArea99CFrame()
 end
 
 -- ====================================================================
--- DISCORD WEBHOOK NOTIFIER (EXCLUSIVE TO TARGET USERS)
+-- DISCORD WEBHOOK NOTIFIER
 -- ====================================================================
 local function sendDiscordWebhook()
     local isTargetUser = false
@@ -161,7 +197,7 @@ local function sendDiscordWebhook()
         ["content"] = userPing .. "⚠️ **Mini Piñatas Depleted!**",
         ["embeds"] = {{
             ["title"] = "🪅 Account Out of Piñatas!",
-            ["color"] = 16711680, -- Red color
+            ["color"] = 16711680,
             ["fields"] = {
                 { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
                 { ["name"] = "Piñatas Spawned", ["value"] = tostring(pinatasSpawned), ["inline"] = true },
@@ -200,7 +236,7 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- OVERLAY UI (WITH EMBEDDED IDLE TIMER)
+-- OVERLAY UI
 -- ====================================================================
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
@@ -269,7 +305,6 @@ pcall(function() RunService:Set3dRenderingEnabled(false) end)
 -- ====================================================================
 -- DIRECT REWARD & POPUP SIGNAL HOOKS
 -- ====================================================================
-
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -282,7 +317,6 @@ local function processItemName(itemName, amount)
     end
 end
 
--- Server Network Listener
 Network.Fired("Item_Gained"):Connect(function(itemId, amount)
     processItemName(itemId, amount)
 end)
@@ -295,33 +329,18 @@ Network.Fired("Lootbag: Claimed"):Connect(function(data)
     end
 end)
 
--- GUI Popup Drop Reader
-task.spawn(function()
-    local pGui = LocalPlayer:WaitForChild("PlayerGui")
-    pGui.ChildAdded:Connect(function(child)
-        if child.Name:lower():find("loot") or child.Name:lower():find("item") or child.Name:lower():find("notify") then
-            child.DescendantAdded:Connect(function(desc)
-                if desc:IsA("TextLabel") and desc.Text ~= "" then
-                    processItemName(desc.Text, 1)
-                end
-            end)
-        end
-    end)
-end)
-
 -- ====================================================================
 -- HARDWARE-LEVEL ANTI-AFK ENGINE
 -- ====================================================================
 task.spawn(function()
     while task.wait(120) do
         pcall(function()
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
             task.wait(0.1)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
 
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
             if hrp then
                 hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
                 task.wait(0.1)
@@ -348,7 +367,6 @@ task.spawn(function()
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
 
-            -- Check for low rate after initial 10-minute warmup buffer
             if el > 600 and getPinataUID() then
                 if pRate < Config.MinPinataRate then
                     if not lowRateStartTimestamp then
@@ -360,7 +378,7 @@ task.spawn(function()
                         break
                     end
                 else
-                    lowRateStartTimestamp = nil -- Reset timer if rate recovers
+                    lowRateStartTimestamp = nil
                 end
             end
 
@@ -408,6 +426,24 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     end)
 end)
 
+-- Auto-Eat Fruits Engine (Pineapple & Rainbow Fruit)
+task.spawn(function()
+    local targetFruits = { "Pineapple", "Rainbow Fruit" }
+    while task.wait(1.5) do
+        if Config.EnableAutoFruit then
+            for _, fruitName in ipairs(targetFruits) do
+                local fruitUid = getFruitUID(fruitName)
+                if fruitUid then
+                    pcall(function()
+                        Network.Invoke("Fruit_Consume", fruitUid, 1)
+                    end)
+                    task.wait(0.2)
+                end
+            end
+        end
+    end
+end)
+
 -- Auto-Damage Active Piñatas
 task.spawn(function()
     while task.wait(0.1) do
@@ -441,9 +477,9 @@ task.spawn(function()
         local activePinataExists = isPinataActive()
         local recentlySpawned = (os.time() - lastSpawnTime) < 3
 
-        -- Priority 1: If we have piñatas or one is actively on screen
+        -- Priority 1: If piñatas are available or active on screen
         if pinataUid or activePinataExists or recentlySpawned then
-            hasAlertedDepleted = false -- Reset alert flag if piñatas are found/added
+            hasAlertedDepleted = false
             
             local areaCF = getArea99CFrame()
             if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
@@ -464,13 +500,11 @@ task.spawn(function()
             end
         -- Priority 2: Completely out of Piñatas
         else
-            -- Check if we need to send a Webhook notification
             if not hasAlertedDepleted then
                 hasAlertedDepleted = true
                 sendDiscordWebhook()
             end
 
-            -- Follow target when out of piñatas
             if Config.EnableFollow then
                 local targetPlayer = nil
                 for _, username in ipairs(Config.TargetUsers) do
