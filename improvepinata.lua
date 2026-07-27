@@ -42,7 +42,7 @@ if not Client then
     return
 end
 
--- Safely require core network & save modules with retries
+-- Safely require core network & save modules
 local Network, Save
 for i = 1, 10 do
     pcall(function()
@@ -191,18 +191,11 @@ local function sendDiscordWebhook()
     end)
 end
 
--- Performance Optimizations
+-- Safe Mobile Optimizations
 pcall(function()
     SoundService.Volume = 0
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 9e9
-    if setfpscap then setfpscap(15) end
-end)
-
-task.spawn(function()
-    while task.wait(60) do
-        collectgarbage("collect")
-    end
 end)
 
 -- UI Setup
@@ -253,26 +246,16 @@ miniBtn.Visible = false
 Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 6)
 
 btn.MouseButton1Click:Connect(function()
-    pcall(function()
-        if RunService.Set3dRenderingEnabled then RunService:Set3dRenderingEnabled(true) end
-        bg.Visible = false
-        miniBtn.Visible = true
-    end)
+    bg.Visible = false
+    miniBtn.Visible = true
 end)
 
 miniBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        if RunService.Set3dRenderingEnabled then RunService:Set3dRenderingEnabled(false) end
-        bg.Visible = true
-        miniBtn.Visible = false
-    end)
+    bg.Visible = true
+    miniBtn.Visible = false
 end)
 
-pcall(function()
-    if RunService.Set3dRenderingEnabled then RunService:Set3dRenderingEnabled(false) end
-end)
-
--- Track Rewards safely
+-- Track Rewards via Network Signals Only (Safe for Mobile)
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -300,20 +283,6 @@ if Network then
         end)
     end)
 end
-
--- GUI Popup Reader
-task.spawn(function()
-    local pGui = LocalPlayer:WaitForChild("PlayerGui")
-    pGui.ChildAdded:Connect(function(child)
-        if child.Name:lower():find("loot") or child.Name:lower():find("item") or child.Name:lower():find("notify") then
-            child.DescendantAdded:Connect(function(desc)
-                if desc:IsA("TextLabel") and desc.Text ~= "" then
-                    processItemName(desc.Text, 1)
-                end
-            end)
-        end
-    end)
-end)
 
 -- Anti-AFK Engine
 task.spawn(function()
@@ -354,7 +323,7 @@ task.spawn(function()
                     if not lowRateStartTimestamp then
                         lowRateStartTimestamp = os.time()
                     elseif (os.time() - lowRateStartTimestamp) >= Config.LowRateThresholdSeconds then
-                        txt.Text = "\n\n⚠️ RATE STALLED (< 7/MIN FOR 10M) ⚠️\nREJOINING SERVER TO RESET CACHE..."
+                        txt.Text = "\n\n⚠️ RATE STALLED (< 7/MIN FOR 10M) ⚠️\nREJOINING SERVER..."
                         task.wait(2)
                         rejoinServer()
                         break
@@ -407,7 +376,7 @@ end
 
 -- Auto-Damage Active Piñatas
 task.spawn(function()
-    while task.wait(0.1) do
+    while task.wait(0.25) do
         if not Network or not Breakables then continue end
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
