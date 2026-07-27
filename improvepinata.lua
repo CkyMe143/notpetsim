@@ -15,9 +15,7 @@ getgenv().Config = {
         "Karma_Luckyy"
     },
     ['WebhookUrl'] = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Insert Webhook URL
-    ['DiscordUserId'] = "",                          -- Insert Discord User ID for @mention (e.g. "123456789012345678")
-    ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
-    ['LowRateThresholdSeconds'] = 600                -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['DiscordUserId'] = ""                           -- Insert Discord User ID for @mention (e.g. "123456789012345678")
 }
 
 -- ====================================================================
@@ -31,7 +29,6 @@ local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
 local UIS = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library")
@@ -50,7 +47,6 @@ local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
 local hasAlertedDepleted = false -- Anti-spam flag for Discord webhook
-local lowRateStartTimestamp = nil -- Keeps track of when rate dropped below threshold
 
 -- Reset user idle counter on screen
 local function resetIdleTimer()
@@ -64,17 +60,6 @@ end)
 UIS.InputChanged:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
-
--- Function to safely handle rejoining
-local function rejoinServer()
-    pcall(function()
-        if #Players:GetPlayers() <= 1 then
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        else
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-        end
-    end)
-end
 
 -- Safe function to search inventory ONLY for Mini Pinata UID
 local cachedPinataUid = nil
@@ -132,6 +117,7 @@ end
 -- DISCORD WEBHOOK NOTIFIER (EXCLUSIVE TO TARGET USERS)
 -- ====================================================================
 local function sendDiscordWebhook()
+    -- 1. Check if local player is one of the designated TargetUsers
     local isTargetUser = false
     for _, username in ipairs(Config.TargetUsers) do
         if LocalPlayer.Name:lower() == tostring(username):lower() then
@@ -140,8 +126,10 @@ local function sendDiscordWebhook()
         end
     end
 
+    -- If this account is not in TargetUsers, skip sending the webhook completely
     if not isTargetUser then return end
 
+    -- 2. Grace period check
     if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then 
         return 
     end
@@ -334,10 +322,10 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- STATS UPDATE & LOW RATE DETECTOR LOOP
+-- STATS UPDATE LOOP (INCLUDES LIVE IDLE TIMER)
 -- ====================================================================
 task.spawn(function()
-    while task.wait(1) do
+    while task.wait(0.2) do
         if sf and sf.Parent then
             local el = os.time() - st 
             local se = el > 0 and el or 1
@@ -348,34 +336,17 @@ task.spawn(function()
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
 
-            -- Check for low rate after initial 10-minute warmup buffer
-            if el > 600 and getPinataUID() then
-                if pRate < Config.MinPinataRate then
-                    if not lowRateStartTimestamp then
-                        lowRateStartTimestamp = os.time()
-                    elseif (os.time() - lowRateStartTimestamp) >= Config.LowRateThresholdSeconds then
-                        txt.Text = "\n\n⚠️ RATE STALLED (< 7/MIN FOR 10M) ⚠️\nREJOINING SERVER TO RESET CACHE..."
-                        task.wait(2)
-                        rejoinServer()
-                        break
-                    end
-                else
-                    lowRateStartTimestamp = nil -- Reset timer if rate recovers
-                end
-            end
-
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d\n" ..
-                "└ Rate: %.1f/min %s\n\n" ..
+                "└ Rate: %.1f/min\n\n" ..
                 "Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min\n\n" ..
                 "Large Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min",
                 h, m, s, currentIdle,
-                pinatasSpawned, pRate, 
-                (lowRateStartTimestamp and string.format("[Low Rate Warning: %ds]", os.time() - lowRateStartTimestamp) or ""),
+                pinatasSpawned, pRate,
                 giftBagsGained, gRate,
                 largeGiftBagsGained, lRate
             )
