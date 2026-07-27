@@ -14,8 +14,8 @@ getgenv().Config = {
         "Cleave_Luckyy",
         "Karma_Luckyy"
     },
-    ['WebhookUrl'] = "YOUR_DISCORD_WEBHOOK_URL_HERE", -- Insert Webhook URL
-    ['DiscordUserId'] = "",                          -- Insert Discord User ID for @mention (e.g. "123456789012345678")
+    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8", -- Insert Webhook URL
+    ['DiscordUserId'] = "1256971111300726845",                          -- Insert Discord User ID for @mention (e.g. "123456789012345678")
     ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
     ['LowRateThresholdSeconds'] = 600,               -- Rejoin if rate stays below threshold for 10 mins (600s)
     ['EnableAutoFruit'] = true                       -- Auto-Eat Pineapple & Rainbow Fruit
