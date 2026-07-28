@@ -198,6 +198,13 @@ pcall(function()
     Lighting.FogEnd = 9e9
 end)
 
+-- Memory Cleaner (Prevents executor memory leak slowdowns over long sessions)
+task.spawn(function()
+    while task.wait(180) do
+        pcall(function() gcinfo() end)
+    end
+end)
+
 -- UI Setup
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
@@ -373,9 +380,9 @@ if Network then
     end)
 end
 
--- Auto-Damage Active Piñatas
+-- HIGH-SPEED Auto-Damage Active Piñatas
 task.spawn(function()
-    while task.wait(0.25) do
+    while task.wait(0.1) do
         if not Network or not Breakables then continue end
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
@@ -388,24 +395,24 @@ task.spawn(function()
                     pcall(function()
                         Network.UnreliableFire("Breakables_PlayerDealDamage", v.Name)
                     end)
-                    task.wait(0.05)
+                    task.wait(0.02)
                 end
             end
         end
     end
 end)
 
--- Main Farming / Spawning / Following Loop
+-- HIGH-SPEED Main Farming / Spawning / Following Loop
 local lastSpawnTime = 0
 task.spawn(function()
-    while task.wait(0.3) do
+    while task.wait(0.1) do
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
         local pinataUid = getPinataUID()
         local activePinataExists = isPinataActive()
-        local recentlySpawned = (os.time() - lastSpawnTime) < 3
+        local recentlySpawned = (os.time() - lastSpawnTime) < 2
 
         -- Priority 1: If we have piñatas or one is actively on screen
         if pinataUid or activePinataExists or recentlySpawned then
@@ -425,7 +432,7 @@ task.spawn(function()
                 if success then
                     pinatasSpawned = pinatasSpawned + 1
                     lastSpawnTime = os.time()
-                    task.wait(0.5)
+                    task.wait(0.2)
                 end
             end
         -- Priority 2: Completely out of Piñatas
