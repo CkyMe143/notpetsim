@@ -14,8 +14,8 @@ getgenv().Config = {
         "Cleave_Luckyy",
         "Karma_Luckyy"
     },
-    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8", -- Insert Webhook URL
-    ['DiscordUserId'] = "1256971111300726845",                          -- Insert Discord User ID for @mention
+    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
+    ['DiscordUserId'] = "1256971111300726845",       -- Discord User ID for @mention
     ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
     ['LowRateThresholdSeconds'] = 600               -- Rejoin if rate stays below threshold for 10 mins (600s)
 }
@@ -42,7 +42,7 @@ if not Client then
     return
 end
 
--- Safely require core network & save modules
+-- Safely require core network & save modules with retries
 local Network, Save
 for i = 1, 10 do
     pcall(function()
@@ -91,7 +91,7 @@ end
 -- Safe Inventory Finder (Mini Piñata ONLY)
 local cachedPinataUid = nil
 local function getPinataUID()
-    if not Save then return nil end
+    if not Save then return cachedPinataUid end
     local saveData = nil
     pcall(function() saveData = Save.Get() end)
 
@@ -158,7 +158,7 @@ local function sendDiscordWebhook()
     if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then return end
 
     local url = Config.WebhookUrl
-    if not url or url == "" or url == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
+    if not url or url == "" then return end
 
     local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if not httpRequest then return end
@@ -255,7 +255,7 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- Track Rewards via Network Signals Only (Safe for Mobile)
+-- Item Processing
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -304,7 +304,7 @@ task.spawn(function()
     end
 end)
 
--- Stats Updates & Low Rate Rejoin Monitor
+-- Non-Yielding Stats Update & Low Rate Rejoin Monitor
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -317,16 +317,15 @@ task.spawn(function()
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
 
-            -- Rejoin check if rate stays below threshold after initial 10m warm-up
-            if el > 600 and getPinataUID() then
+            -- Check low rate condition using cached inventory state
+            if el > 600 and cachedPinataUid ~= nil then
                 if pRate < Config.MinPinataRate then
                     if not lowRateStartTimestamp then
                         lowRateStartTimestamp = os.time()
                     elseif (os.time() - lowRateStartTimestamp) >= Config.LowRateThresholdSeconds then
                         txt.Text = "\n\n⚠️ RATE STALLED (< 7/MIN FOR 10M) ⚠️\nREJOINING SERVER..."
                         task.wait(2)
-                        rejoinServer()
-                        break
+                        task.spawn(rejoinServer)
                     end
                 else
                     lowRateStartTimestamp = nil
