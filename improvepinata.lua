@@ -396,7 +396,7 @@ task.spawn(function()
     end
 end)
 
--- HIGH-SPEED Main Farming Loop
+-- HIGH-SPEED Main Farming Loop (Always teleports to Area 99)
 local lastSpawnTime = 0
 task.spawn(function()
     while task.wait(0.1) do
@@ -404,28 +404,26 @@ task.spawn(function()
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
+        -- Always enforce standing inside Area 99
+        local areaCF = getArea99CFrame()
+        if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
+            hrp.CFrame = areaCF
+        end
+
+        -- Check if piñatas are available to spawn
         local pinataUid = getPinataUID()
         local activePinataExists = isPinataActive()
-        local recentlySpawned = (os.time() - lastSpawnTime) < 2
 
-        -- If we have piñatas or one is actively on screen
-        if pinataUid or activePinataExists or recentlySpawned then
-            local areaCF = getArea99CFrame()
-            if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
-                hrp.CFrame = areaCF
-            end
+        if pinataUid and not activePinataExists and Network then
+            local success = false
+            pcall(function()
+                success = Network.Invoke("MiniPinata_Consume", pinataUid)
+            end)
 
-            if pinataUid and not activePinataExists and Network then
-                local success = false
-                pcall(function()
-                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
-                end)
-
-                if success then
-                    pinatasSpawned = pinatasSpawned + 1
-                    lastSpawnTime = os.time()
-                    task.wait(0.2)
-                end
+            if success then
+                pinatasSpawned = pinatasSpawned + 1
+                lastSpawnTime = os.time()
+                task.wait(0.2)
             end
         end
     end
