@@ -8,16 +8,7 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- CONFIGURATION
 -- ====================================================================
 getgenv().Config = {
-    ['AreaName'] = "99 | Rainbow Road", -- Strictly Area 99
-    ['EnableFollow'] = true,            -- Follow target ONLY when truly out of piñatas
-    ['TargetUsers'] = {                -- Main accounts that spawn piñatas (ONLY THESE WILL PING)
-        "Cleave_Luckyy",
-        "Karma_Luckyy"
-    },
-    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
-    ['DiscordUserId'] = "1256971111300726845",       -- Discord User ID for @mention
-    ['MinPinataRate'] = 7.0,                         -- Minimum acceptable rate per minute
-    ['LowRateThresholdSeconds'] = 600               -- Rejoin if rate stays below threshold for 10 mins (600s)
+    ['AreaName'] = "99 | Rainbow Road" -- Strictly Area 99
 }
 
 -- ====================================================================
@@ -62,8 +53,11 @@ local pinatasSpawned = 0
 local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
-local hasAlertedDepleted = false 
-local lowRateStartTimestamp = nil 
+
+-- Initial Bag Baseline (To track gained amount during session)
+local initialGiftBags = 0
+local initialLargeGiftBags = 0
+local hasInitializedBagBaseline = false
 
 local function resetIdleTimer()
     lastInput = tick()
@@ -76,17 +70,6 @@ end)
 UIS.InputChanged:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
-
--- Safe Server Rejoin Handler
-local function rejoinServer()
-    pcall(function()
-        if #Players:GetPlayers() <= 1 then
-            TeleportService:Teleport(game.PlaceId, LocalPlayer)
-        else
-            TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
-        end
-    end)
-end
 
 -- Safe Inventory Finder (Mini Piñata ONLY)
 local cachedPinataUid = nil
@@ -113,6 +96,55 @@ local function getPinataUID()
     end
     return nil
 end
+
+-- SAFE INVENTORY TRACKER FOR GIFT BAGS & LARGE GIFT BAGS
+local function updateGiftBagCountsFromSave()
+    if not Save then return end
+    local saveData = nil
+    pcall(function() saveData = Save.Get() end)
+
+    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
+        return 
+    end
+
+    local currentGiftBags = 0
+    local currentLargeGiftBags = 0
+
+    for uid, item in pairs(saveData.Inventory.Misc) do
+        if type(item) == "table" and item.id then
+            local idLower = tostring(item.id):lower()
+            local amount = tonumber(item._am) or 1
+
+            if idLower == "large gift bag" or idLower == "giant gift bag" then
+                currentLargeGiftBags = currentLargeGiftBags + amount
+            elseif idLower == "gift bag" then
+                currentGiftBags = currentGiftBags + amount
+            end
+        end
+    end
+
+    -- Set baseline on first successful run
+    if not hasInitializedBagBaseline then
+        initialGiftBags = currentGiftBags
+        initialLargeGiftBags = currentLargeGiftBags
+        hasInitializedBagBaseline = true
+    else
+        -- Update gains based on actual inventory delta
+        if currentGiftBags >= initialGiftBags then
+            giftBagsGained = currentGiftBags - initialGiftBags
+        end
+        if currentLargeGiftBags >= initialLargeGiftBags then
+            largeGiftBagsGained = currentLargeGiftBags - initialLargeGiftBags
+        end
+    end
+end
+
+-- Background thread to update bag counts safely from Save data
+task.spawn(function()
+    while task.wait(5) do
+        updateGiftBagCountsFromSave()
+    end
+end)
 
 local function isPinataActive()
     if not Breakables then return false end
@@ -144,58 +176,36 @@ local function getArea99CFrame()
     return nil
 end
 
--- Webhook Notifier
-local function sendDiscordWebhook()
-    local isTargetUser = false
-    for _, username in ipairs(Config.TargetUsers) do
-        if LocalPlayer.Name:lower() == tostring(username):lower() then
-            isTargetUser = true
-            break
-        end
-    end
-
-    if not isTargetUser then return end
-    if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then return end
-
-    local url = Config.WebhookUrl
-    if not url or url == "" then return end
-
-    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    if not httpRequest then return end
-
-    local userPing = Config.DiscordUserId ~= "" and ("<@" .. Config.DiscordUserId .. "> ") or ""
-
-    local payload = {
-        ["content"] = userPing .. "⚠️ **Mini Piñatas Depleted!**",
-        ["embeds"] = {{
-            ["title"] = "🪅 Account Out of Piñatas!",
-            ["color"] = 16711680,
-            ["fields"] = {
-                { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
-                { ["name"] = "Piñatas Spawned", ["value"] = tostring(pinatasSpawned), ["inline"] = true },
-                { ["name"] = "Gift Bags", ["value"] = "+" .. tostring(giftBagsGained), ["inline"] = true },
-                { ["name"] = "Large Gift Bags", ["value"] = "+" .. tostring(largeGiftBagsGained), ["inline"] = true }
-            },
-            ["footer"] = { ["text"] = "Arceus X PS99 Tracker" },
-            ["timestamp"] = DateTime.now():ToIsoDate()
-        }}
-    }
-
-    pcall(function()
-        httpRequest({
-            Url = url,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
-end
-
--- Safe Mobile Optimizations
+-- Safe Mobile Optimizations & Map Transparency Stripper
 pcall(function()
     SoundService.Volume = 0
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 9e9
+
+    -- Disable map object transparency and heavy textures
+    local function cleanMapObject(obj)
+        if obj:IsA("BasePart") then
+            if obj.Transparency > 0 and obj.Transparency < 1 then
+                obj.Transparency = 0 -- Force solid opaque
+            end
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            obj:Destroy()
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+            obj.Enabled = false
+        end
+    end
+
+    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+    if mapFolder then
+        for _, descendant in pairs(mapFolder:GetDescendants()) do
+            cleanMapObject(descendant)
+        end
+
+        mapFolder.DescendantAdded:Connect(cleanMapObject)
+    end
 end)
 
 -- Memory Cleaner (Prevents executor memory leak slowdowns over long sessions)
@@ -262,7 +272,7 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- Item Processing
+-- Backup Event Processing (Immediate UI updates between Save polling)
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -311,7 +321,7 @@ task.spawn(function()
     end
 end)
 
--- Non-Yielding Stats Update & Low Rate Rejoin Monitor
+-- Non-Yielding Stats Update Loop
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -324,33 +334,17 @@ task.spawn(function()
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
 
-            -- Check low rate condition using cached inventory state
-            if el > 600 and cachedPinataUid ~= nil then
-                if pRate < Config.MinPinataRate then
-                    if not lowRateStartTimestamp then
-                        lowRateStartTimestamp = os.time()
-                    elseif (os.time() - lowRateStartTimestamp) >= Config.LowRateThresholdSeconds then
-                        txt.Text = "\n\n⚠️ RATE STALLED (< 7/MIN FOR 10M) ⚠️\nREJOINING SERVER..."
-                        task.wait(2)
-                        task.spawn(rejoinServer)
-                    end
-                else
-                    lowRateStartTimestamp = nil
-                end
-            end
-
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d\n" ..
-                "└ Rate: %.1f/min %s\n\n" ..
+                "└ Rate: %.1f/min\n\n" ..
                 "Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min\n\n" ..
                 "Large Gift Bags Gained: +%d\n" ..
                 "└ Rate: %.1f/min",
                 h, m, s, currentIdle,
-                pinatasSpawned, pRate, 
-                (lowRateStartTimestamp and string.format("[Low Rate Warning: %ds]", os.time() - lowRateStartTimestamp) or ""),
+                pinatasSpawned, pRate,
                 giftBagsGained, gRate,
                 largeGiftBagsGained, lRate
             )
@@ -402,7 +396,7 @@ task.spawn(function()
     end
 end)
 
--- HIGH-SPEED Main Farming / Spawning / Following Loop
+-- HIGH-SPEED Main Farming Loop
 local lastSpawnTime = 0
 task.spawn(function()
     while task.wait(0.1) do
@@ -414,10 +408,8 @@ task.spawn(function()
         local activePinataExists = isPinataActive()
         local recentlySpawned = (os.time() - lastSpawnTime) < 2
 
-        -- Priority 1: If we have piñatas or one is actively on screen
+        -- If we have piñatas or one is actively on screen
         if pinataUid or activePinataExists or recentlySpawned then
-            hasAlertedDepleted = false
-            
             local areaCF = getArea99CFrame()
             if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
                 hrp.CFrame = areaCF
@@ -434,29 +426,6 @@ task.spawn(function()
                     lastSpawnTime = os.time()
                     task.wait(0.2)
                 end
-            end
-        -- Priority 2: Completely out of Piñatas
-        else
-            if not hasAlertedDepleted then
-                hasAlertedDepleted = true
-                sendDiscordWebhook()
-            end
-
-            if Config.EnableFollow then
-                pcall(function()
-                    local targetPlayer = nil
-                    for _, username in ipairs(Config.TargetUsers) do
-                        local p = Players:FindFirstChild(username)
-                        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                            targetPlayer = p
-                            break
-                        end
-                    end
-
-                    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
-                    end
-                end)
             end
         end
     end
