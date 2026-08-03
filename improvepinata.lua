@@ -8,7 +8,8 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- CONFIGURATION
 -- ====================================================================
 getgenv().Config = {
-    ['AreaName'] = "99 | Rainbow Road" -- Target Zone
+    ['AreaName'] = "Rainbow Road",
+    ['AreaNumber'] = 99
 }
 
 -- ====================================================================
@@ -158,16 +159,24 @@ local function isPinataActive()
     return false
 end
 
--- GET AREA 99 POSITION SAFE
+-- IMPROVED UNIVERSAL AREA LOCATOR
 local function getArea99CFrame()
-    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
-    if mapFolder then
-        local area = mapFolder:FindFirstChild(Config.AreaName)
-        if area then
-            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") and area.INTERACT.BREAK_ZONES:FindFirstChild("BREAK_ZONE") then
-                return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-            elseif area:FindFirstChild("PERSISTENT") and area.PERSISTENT:FindFirstChild("Teleport") then
-                return area.PERSISTENT.Teleport.CFrame
+    for _, container in pairs(workspace:GetChildren()) do
+        if container.Name:find("Map") or container.Name:find("World") then
+            for _, area in pairs(container:GetChildren()) do
+                if area.Name == Config.AreaName or area.Name:find(tostring(Config.AreaNumber)) then
+                    local breakZone = area:FindFirstChild("INTERACT", true) and area:FindFirstChild("BREAK_ZONE", true)
+                    if breakZone and breakZone:IsA("BasePart") then
+                        return breakZone.CFrame
+                    end
+                    
+                    local tpPad = area:FindFirstChild("Teleport", true) or area:FindFirstChild("Spawn", true)
+                    if tpPad and tpPad:IsA("BasePart") then
+                        return tpPad.CFrame
+                    end
+
+                    return area:GetPivot()
+                end
             end
         end
     end
@@ -211,7 +220,7 @@ task.spawn(function()
     end
 end)
 
--- UI Setup (RESTORED HIDE / SHOW BUTTONS)
+-- UI Setup (HIDE / SHOW BUTTONS)
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
@@ -268,7 +277,7 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- Backup Event Processing (RESTORED REALTIME LISTENERS)
+-- Realtime Item Listeners
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -297,7 +306,7 @@ if Network then
     end)
 end
 
--- SMART AREA 99 TELEPORTER
+-- IMPROVED SMART TELEPORTER
 local lastTeleportAttempt = 0
 local function safeTeleportToArea99()
     local char = LocalPlayer.Character
@@ -310,14 +319,15 @@ local function safeTeleportToArea99()
     if (hrp.Position - areaCF.Position).Magnitude > 30 then
         if Network and tick() - lastTeleportAttempt > 3 then
             lastTeleportAttempt = tick()
-            pcall(function()
-                Network.Invoke("Teleport: Request Teleport", Config.AreaName)
-            end)
+            pcall(function() Network.Invoke("Teleport: Request Teleport", Config.AreaName) end)
+            pcall(function() Network.Invoke("Teleport: Request Teleport", tostring(Config.AreaNumber)) end)
             task.wait(0.5)
         end
 
-        if (hrp.Position - areaCF.Position).Magnitude > 30 then
-            hrp.CFrame = areaCF * CFrame.new(0, 5, 0)
+        local updatedChar = LocalPlayer.Character
+        local updatedHrp = updatedChar and updatedChar:FindFirstChild("HumanoidRootPart")
+        if updatedHrp and (updatedHrp.Position - areaCF.Position).Magnitude > 30 then
+            updatedHrp.CFrame = areaCF * CFrame.new(0, 5, 0)
         end
     end
 end
@@ -342,7 +352,7 @@ task.spawn(function()
     end
 end)
 
--- Non-Yielding Stats Update Loop (UPDATED TO /MIN RATES)
+-- Stats Loop (/MIN RATES)
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -350,7 +360,6 @@ task.spawn(function()
             local se = el > 0 and el or 1
             local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
 
-            -- Calculated per minute (60 seconds)
             local pRate = (pinatasSpawned / se) * 60
             local gRate = (giftBagsGained / se) * 60
             local lRate = (largeGiftBagsGained / se) * 60
@@ -391,7 +400,7 @@ if Network then
     end)
 end
 
--- SMART DAMAGE ENGINE (Jar Clearing + Direct Nuke + Piñata Targeting)
+-- SMART DAMAGE ENGINE
 task.spawn(function()
     while task.wait(0.02) do
         if not Network or not Breakables then continue end
@@ -443,7 +452,7 @@ task.spawn(function()
     end
 end)
 
--- SAFE MAIN FARMING LOOP
+-- MULTI-REMOTE PIÑATA SPAWN ENGINE
 task.spawn(function()
     while task.wait(0.3) do
         safeTeleportToArea99()
@@ -453,13 +462,29 @@ task.spawn(function()
 
         if pinataUid and not activePinataExists and Network then
             local success = false
+
+            -- Try Remote Method 1: Misc_Consume with UID
             pcall(function()
-                success = Network.Invoke("MiniPinata_Consume", pinataUid)
+                success = Network.Invoke("Misc_Consume", pinataUid)
             end)
+
+            -- Try Remote Method 2: Misc_Consume with Item ID string
+            if not success then
+                pcall(function()
+                    success = Network.Invoke("Misc_Consume", "Mini Pinata")
+                end)
+            end
+
+            -- Try Remote Method 3: Legacy MiniPinata_Consume fallback
+            if not success then
+                pcall(function()
+                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
+                end)
+            end
 
             if success then
                 pinatasSpawned = pinatasSpawned + 1
-                task.wait(0.2)
+                task.wait(0.5)
             end
         end
     end
