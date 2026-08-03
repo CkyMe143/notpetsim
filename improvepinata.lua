@@ -9,7 +9,7 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- ====================================================================
 getgenv().Config = {
     ['Areas'] = {
-        "99 | Rainbow Road"
+        "98 | Colorful Clouds"
     }
 }
 
