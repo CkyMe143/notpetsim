@@ -63,6 +63,10 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
+UIS.InputChanged:Connect(function(input, gameProcessed)
+    if not gameProcessed then resetIdleTimer() end
+end)
+
 -- Safe Inventory Finder (Mini Piñata)
 local cachedPinataUid = nil
 local function getPinataUID()
@@ -170,6 +174,129 @@ local function getArea99CFrame()
     return nil
 end
 
+-- SAFE MOBILE OPTIMIZATIONS & MAP TRANSPARENCY STRIPPER
+pcall(function()
+    SoundService.Volume = 0
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 9e9
+
+    local function cleanMapObject(obj)
+        if obj:IsA("BasePart") then
+            if obj.Transparency > 0 and obj.Transparency < 1 then
+                obj.Transparency = 0
+            end
+            obj.Material = Enum.Material.SmoothPlastic
+            obj.Reflectance = 0
+            obj.CastShadow = false
+        elseif obj:IsA("Decal") or obj:IsA("Texture") then
+            obj:Destroy()
+        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
+            obj.Enabled = false
+        end
+    end
+
+    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+    if mapFolder then
+        for _, descendant in pairs(mapFolder:GetDescendants()) do
+            cleanMapObject(descendant)
+        end
+        mapFolder.DescendantAdded:Connect(cleanMapObject)
+    end
+end)
+
+-- Memory Cleaner
+task.spawn(function()
+    while task.wait(180) do
+        pcall(function() gcinfo() end)
+    end
+end)
+
+-- UI Setup (RESTORED HIDE / SHOW BUTTONS)
+if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
+if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
+
+local sf = Instance.new("ScreenGui", CG)
+sf.Name = "AFK_Saver_UI"
+sf.ResetOnSpawn = false
+
+local bg = Instance.new("Frame", sf)
+bg.Size = UDim2.new(1, 0, 1, 0)
+bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+bg.BorderSizePixel = 0
+
+local txt = Instance.new("TextLabel", bg)
+txt.Size = UDim2.new(1, 0, 0.65, 0)
+txt.Position = UDim2.new(0, 0, 0.1, 0)
+txt.BackgroundTransparency = 1
+txt.TextColor3 = Color3.fromRGB(0, 255, 120)
+txt.Font = Enum.Font.Code
+txt.TextSize = 15
+txt.Text = "Starting Session Tracker..."
+
+local btn = Instance.new("TextButton", bg)
+btn.Size = UDim2.new(0, 140, 0, 45)
+btn.Position = UDim2.new(0.5, -70, 0.82, 0)
+btn.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+btn.Font = Enum.Font.Code
+btn.TextSize = 16
+btn.Text = "Show Game"
+Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+
+local miniGui = Instance.new("ScreenGui", CG)
+miniGui.Name = "AFK_Toggle_Btn"
+miniGui.ResetOnSpawn = false
+
+local miniBtn = Instance.new("TextButton", miniGui)
+miniBtn.Size = UDim2.new(0, 120, 0, 45)
+miniBtn.Position = UDim2.new(0.5, -60, 0.05, 0)
+miniBtn.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+miniBtn.TextColor3 = Color3.fromRGB(0, 255, 100)
+miniBtn.Font = Enum.Font.Code
+miniBtn.TextSize = 14
+miniBtn.Text = "[ Hide Game ]"
+miniBtn.Visible = false
+Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 6)
+
+btn.MouseButton1Click:Connect(function()
+    bg.Visible = false
+    miniBtn.Visible = true
+end)
+
+miniBtn.MouseButton1Click:Connect(function()
+    bg.Visible = true
+    miniBtn.Visible = false
+end)
+
+-- Backup Event Processing (RESTORED REALTIME LISTENERS)
+local function processItemName(itemName, amount)
+    if not itemName then return end
+    local str = tostring(itemName):lower()
+    local amt = tonumber(amount) or 1
+
+    if str:find("large") or str:find("giant") then
+        largeGiftBagsGained = largeGiftBagsGained + amt
+    elseif str:find("gift") or str:find("bag") then
+        giftBagsGained = giftBagsGained + amt
+    end
+end
+
+if Network then
+    pcall(function()
+        Network.Fired("Item_Gained"):Connect(function(itemId, amount)
+            processItemName(itemId, amount)
+        end)
+
+        Network.Fired("Lootbag: Claimed"):Connect(function(data)
+            if type(data) == "table" then
+                processItemName(data.id or data.Item, data.amount or data.Amt)
+            else
+                processItemName(data, 1)
+            end
+        end)
+    end)
+end
+
 -- SMART AREA 99 TELEPORTER
 local lastTeleportAttempt = 0
 local function safeTeleportToArea99()
@@ -202,30 +329,20 @@ task.spawn(function()
             VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
             task.wait(0.1)
             VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
+                task.wait(0.1)
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.05)
+            end
             resetIdleTimer()
         end)
     end
 end)
 
--- UI Setup
-if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
-
-local sf = Instance.new("ScreenGui", CG)
-sf.Name = "AFK_Saver_UI"
-sf.ResetOnSpawn = false
-
-local bg = Instance.new("Frame", sf)
-bg.Size = UDim2.new(1, 0, 1, 0)
-bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-
-local txt = Instance.new("TextLabel", bg)
-txt.Size = UDim2.new(1, 0, 0.65, 0)
-txt.Position = UDim2.new(0, 0, 0.1, 0)
-txt.BackgroundTransparency = 1
-txt.TextColor3 = Color3.fromRGB(0, 255, 120)
-txt.Font = Enum.Font.Code
-txt.TextSize = 15
-
+-- Non-Yielding Stats Update Loop (UPDATED TO /MIN RATES)
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -233,17 +350,19 @@ task.spawn(function()
             local se = el > 0 and el or 1
             local h, m, s = math.floor(el / 3600), math.floor((el % 3600) / 60), el % 60
 
-            local pRate = (pinatasSpawned / se) * 3600
-            local gRate = (giftBagsGained / se) * 3600
-            local lRate = (largeGiftBagsGained / se) * 3600
+            -- Calculated per minute (60 seconds)
+            local pRate = (pinatasSpawned / se) * 60
+            local gRate = (giftBagsGained / se) * 60
+            local lRate = (largeGiftBagsGained / se) * 60
+            local currentIdle = math.floor(tick() - lastInput)
 
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
-                "Uptime: [%02d:%02d:%02d]\n\n" ..
-                "Mini Piñatas Spawned: %d (%.1f/hr)\n" ..
-                "Gift Bags Gained: +%d (%.1f/hr)\n" ..
-                "Large Gift Bags Gained: +%d (%.1f/hr)",
-                h, m, s,
+                "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
+                "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
+                "Gift Bags Gained: +%d (%.1f/min)\n" ..
+                "Large Gift Bags Gained: +%d (%.1f/min)",
+                h, m, s, currentIdle,
                 pinatasSpawned, pRate,
                 giftBagsGained, gRate,
                 largeGiftBagsGained, lRate
@@ -262,6 +381,16 @@ if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("L
     end)
 end
 
+if Network then
+    pcall(function()
+        Network.Fired("Orbs: Create"):Connect(function(InfoTable)
+            local Orbs = {}
+            for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
+            Network.Fire("Orbs: Collect", Orbs) 
+        end)
+    end)
+end
+
 -- SMART DAMAGE ENGINE (Jar Clearing + Direct Nuke + Piñata Targeting)
 task.spawn(function()
     while task.wait(0.02) do
@@ -275,20 +404,16 @@ task.spawn(function()
         local hasJarEvent = false
         local nearbyBreakables = {}
 
-        -- Scan area breakables
         for _, v in pairs(Breakables:GetChildren()) do
             if v:IsA("Model") then
                 local pos = v:GetPivot().Position
                 if (pos - hrp.Position).Magnitude <= 250 then
                     local id = tostring(v:GetAttribute("BreakableID") or v.Name):lower()
                     
-                    -- Check for Jar events in the zone
                     if id:find("jar") or id:find("coinjar") or id:find("itemjar") then
                         hasJarEvent = true
-                    -- Check for direct-damage events (Lucky Blocks, Comets)
                     elseif id:find("luckyblock") or id:find("comet") then
                         directEventTarget = v.Name
-                    -- Check for active Piñata
                     elseif id == "pinata" or id:find("pinata") then
                         pinataTarget = v.Name
                     else
@@ -298,24 +423,18 @@ task.spawn(function()
             end
         end
 
-        -- Target Priority Decision
         local targetToHit = nil
 
         if directEventTarget then
-            -- Priority 1: Nuke direct events (Lucky Block / Comet)
             targetToHit = directEventTarget
         elseif hasJarEvent and #nearbyBreakables > 0 then
-            -- Priority 2: Jar Active! Rapidly clear nearby breakables to complete Jar meter
             targetToHit = nearbyBreakables[math.random(1, #nearbyBreakables)]
         elseif pinataTarget then
-            -- Priority 3: Target active Piñata
             targetToHit = pinataTarget
         elseif #nearbyBreakables > 0 then
-            -- Priority 4: Keep area clear
             targetToHit = nearbyBreakables[math.random(1, #nearbyBreakables)]
         end
 
-        -- Fire damage remote
         if targetToHit then
             pcall(function()
                 Network.UnreliableFire("Breakables_PlayerDealDamage", targetToHit)
@@ -332,7 +451,6 @@ task.spawn(function()
         local pinataUid = getPinataUID()
         local activePinataExists = isPinataActive()
 
-        -- Spawn Piñata as soon as no active Piñata is present
         if pinataUid and not activePinataExists and Network then
             local success = false
             pcall(function()
