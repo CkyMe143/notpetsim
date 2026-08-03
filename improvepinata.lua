@@ -1,4 +1,4 @@
--- Wait until game & local player are completely loaded
+-- Wait until game & local player are loaded
 if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
@@ -8,42 +8,57 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- CONFIGURATION
 -- ====================================================================
 getgenv().Config = {
-    ['AreaName'] = "Rainbow Road",
-    ['AreaNumber'] = 99
+    ['Areas'] = {
+        "99 | Rainbow Road"
+    }
 }
 
 -- ====================================================================
--- SERVICES & SAFE MODULE INITIALIZATION
+-- SERVICES & MODULE INITIALIZATION
 -- ====================================================================
+local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
 local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
 local UIS = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library", 15)
 local Client = Library and Library:WaitForChild("Client", 15)
 
-if not Client then
-    warn("Failed to locate Client Library!")
-    return
+local Network = require(Client:WaitForChild("Network"))
+local Save = require(Client:WaitForChild("Save"))
+
+local Breakables = workspace['__THINGS'].Breakables
+local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+local Areas = {}
+
+for _, v in ipairs(Config.Areas) do
+    local Area = Map and Map:FindFirstChild(v)
+    if Area then 
+        table.insert(Areas, Area)
+    else 
+        warn("Area not found: " .. v) 
+    end
 end
 
--- Safely require core network & save modules
-local Network, Save
-for i = 1, 10 do
-    pcall(function()
-        Network = require(Client:WaitForChild("Network", 5))
-        Save = require(Client:WaitForChild("Save", 5))
-    end)
-    if Network and Save then break end
+-- SPEED MULTIPLIER HOOK (FROM YOUR REFERENCE)
+pcall(function()
+    local PlayerPet = require(Client:WaitForChild("PlayerPet"))
+    hookfunction(PlayerPet.CalculateSpeedMultiplier, function() return 9999 end)
+end)
+
+-- ANTI-IDLE (FROM YOUR REFERENCE)
+pcall(function()
+    LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
+end)
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
     task.wait(1)
-end
-
-local Breakables = workspace:WaitForChild("__THINGS", 10) and workspace.__THINGS:WaitForChild("Breakables", 10)
+    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+end)
 
 -- TRACKING COUNTERS
 local st = os.time()
@@ -64,45 +79,31 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
-UIS.InputChanged:Connect(function(input, gameProcessed)
-    if not gameProcessed then resetIdleTimer() end
-end)
-
--- Safe Inventory Finder (Mini Piñata)
-local cachedPinataUid = nil
-local function getPinataUID()
-    if not Save then return cachedPinataUid end
-    local saveData = nil
-    pcall(function() saveData = Save.Get() end)
-
-    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
-        return cachedPinataUid 
-    end
-    
+-- GET PINATA UID (FROM YOUR REFERENCE)
+local PinataUid = nil
+local GetPinataUID = function()
+    local saveData = Save.Get()
+    if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return nil end
     local Misc = saveData.Inventory.Misc
-    if cachedPinataUid and Misc[cachedPinataUid] and Misc[cachedPinataUid].id == "Mini Pinata" then
-        return cachedPinataUid
+
+    if PinataUid then
+        local Entry = Misc[PinataUid]
+        if Entry and Entry.id == "Mini Pinata" then return PinataUid end
+        PinataUid = nil
     end
-    
-    cachedPinataUid = nil
-    for uid, item in pairs(Misc) do
-        if type(item) == "table" and item.id == "Mini Pinata" then 
-            cachedPinataUid = uid 
+    for uid, v in pairs(Misc) do
+        if v.id == "Mini Pinata" then 
+            PinataUid = uid 
             return uid 
         end
     end
     return nil
 end
 
--- SAFE INVENTORY TRACKER FOR GIFT BAGS & LARGE GIFT BAGS
+-- SAVE INVENTORY TRACKER FOR GIFT BAGS
 local function updateGiftBagCountsFromSave()
-    if not Save then return end
-    local saveData = nil
-    pcall(function() saveData = Save.Get() end)
-
-    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
-        return 
-    end
+    local saveData = Save.Get()
+    if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return end
 
     local currentGiftBags = 0
     local currentLargeGiftBags = 0
@@ -140,87 +141,7 @@ task.spawn(function()
     end
 end)
 
--- Helper to check if Piñata is active
-local function isPinataActive()
-    if not Breakables then return false end
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-    for _, v in pairs(Breakables:GetChildren()) do
-        if v:IsA("Model") then
-            local breakableID = tostring(v:GetAttribute("BreakableID") or "")
-            if breakableID == "Pinata" or v.Name:lower():find("pinata") then
-                local pos = v:GetPivot().Position
-                if (pos - hrp.Position).Magnitude <= 250 then
-                    return true
-                end
-            end
-        end
-    end
-    return false
-end
-
--- IMPROVED UNIVERSAL AREA LOCATOR
-local function getArea99CFrame()
-    for _, container in pairs(workspace:GetChildren()) do
-        if container.Name:find("Map") or container.Name:find("World") then
-            for _, area in pairs(container:GetChildren()) do
-                if area.Name == Config.AreaName or area.Name:find(tostring(Config.AreaNumber)) then
-                    local breakZone = area:FindFirstChild("INTERACT", true) and area:FindFirstChild("BREAK_ZONE", true)
-                    if breakZone and breakZone:IsA("BasePart") then
-                        return breakZone.CFrame
-                    end
-                    
-                    local tpPad = area:FindFirstChild("Teleport", true) or area:FindFirstChild("Spawn", true)
-                    if tpPad and tpPad:IsA("BasePart") then
-                        return tpPad.CFrame
-                    end
-
-                    return area:GetPivot()
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- SAFE MOBILE OPTIMIZATIONS & MAP TRANSPARENCY STRIPPER
-pcall(function()
-    SoundService.Volume = 0
-    Lighting.GlobalShadows = false
-    Lighting.FogEnd = 9e9
-
-    local function cleanMapObject(obj)
-        if obj:IsA("BasePart") then
-            if obj.Transparency > 0 and obj.Transparency < 1 then
-                obj.Transparency = 0
-            end
-            obj.Material = Enum.Material.SmoothPlastic
-            obj.Reflectance = 0
-            obj.CastShadow = false
-        elseif obj:IsA("Decal") or obj:IsA("Texture") then
-            obj:Destroy()
-        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Smoke") or obj:IsA("Fire") then
-            obj.Enabled = false
-        end
-    end
-
-    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
-    if mapFolder then
-        for _, descendant in pairs(mapFolder:GetDescendants()) do
-            cleanMapObject(descendant)
-        end
-        mapFolder.DescendantAdded:Connect(cleanMapObject)
-    end
-end)
-
--- Memory Cleaner
-task.spawn(function()
-    while task.wait(180) do
-        pcall(function() gcinfo() end)
-    end
-end)
-
--- UI Setup (HIDE / SHOW BUTTONS)
+-- UI SETUP (WITH HIDE / SHOW TOGGLE)
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
@@ -277,7 +198,7 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- Realtime Item Listeners
+-- REALTIME ITEM LISTENERS
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -290,69 +211,20 @@ local function processItemName(itemName, amount)
     end
 end
 
-if Network then
-    pcall(function()
-        Network.Fired("Item_Gained"):Connect(function(itemId, amount)
-            processItemName(itemId, amount)
-        end)
-
-        Network.Fired("Lootbag: Claimed"):Connect(function(data)
-            if type(data) == "table" then
-                processItemName(data.id or data.Item, data.amount or data.Amt)
-            else
-                processItemName(data, 1)
-            end
-        end)
+pcall(function()
+    Network.Fired("Item_Gained"):Connect(function(itemId, amount)
+        processItemName(itemId, amount)
     end)
-end
-
--- IMPROVED SMART TELEPORTER
-local lastTeleportAttempt = 0
-local function safeTeleportToArea99()
-    local char = LocalPlayer.Character
-    local hrp = char and char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-
-    local areaCF = getArea99CFrame()
-    if not areaCF then return end
-
-    if (hrp.Position - areaCF.Position).Magnitude > 30 then
-        if Network and tick() - lastTeleportAttempt > 3 then
-            lastTeleportAttempt = tick()
-            pcall(function() Network.Invoke("Teleport: Request Teleport", Config.AreaName) end)
-            pcall(function() Network.Invoke("Teleport: Request Teleport", tostring(Config.AreaNumber)) end)
-            task.wait(0.5)
+    Network.Fired("Lootbag: Claimed"):Connect(function(data)
+        if type(data) == "table" then
+            processItemName(data.id or data.Item, data.amount or data.Amt)
+        else
+            processItemName(data, 1)
         end
-
-        local updatedChar = LocalPlayer.Character
-        local updatedHrp = updatedChar and updatedChar:FindFirstChild("HumanoidRootPart")
-        if updatedHrp and (updatedHrp.Position - areaCF.Position).Magnitude > 30 then
-            updatedHrp.CFrame = areaCF * CFrame.new(0, 5, 0)
-        end
-    end
-end
-
--- Anti-AFK Engine
-task.spawn(function()
-    while task.wait(120) do
-        pcall(function()
-            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
-            task.wait(0.1)
-            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
-
-            local char = LocalPlayer.Character
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-            if hrp then
-                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
-                task.wait(0.1)
-                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.05)
-            end
-            resetIdleTimer()
-        end)
-    end
+    end)
 end)
 
--- Stats Loop (/MIN RATES)
+-- STATS UPDATE LOOP (/MIN RATES)
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -380,51 +252,55 @@ task.spawn(function()
     end
 end)
 
--- Auto Lootbags / Orbs
+-- AUTO LOOTBAGS & ORBS (FROM YOUR REFERENCE)
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
     workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
         task.wait()
-        if lootbag and Network then 
-            pcall(function() Network.Fire("Lootbags_Claim", { lootbag.Name }) end)
-        end
+        if lootbag then Network.Fire("Lootbags_Claim", { lootbag.Name }) end
     end)
 end
 
-if Network then
-    pcall(function()
-        Network.Fired("Orbs: Create"):Connect(function(InfoTable)
-            local Orbs = {}
-            for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
-            Network.Fire("Orbs: Collect", Orbs) 
-        end)
-    end)
-end
+Network.Fired("Orbs: Create"):Connect(function(InfoTable)
+    local Orbs = {}
+    for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
+    Network.Fire("Orbs: Collect", Orbs)
+end)
 
--- SMART DAMAGE ENGINE
+-- ADVANCED TARGETING & BREAKING ENGINE
+-- Priority Order:
+-- 1. Lucky Blocks & Comets (Nukes target directly)
+-- 2. Coin Jars & Item Jars (Hits surrounding breakables to pop the jar)
+-- 3. Piñatas (Nukes target directly)
+-- 4. Standard Breakables in range (Clears area)
 task.spawn(function()
-    while task.wait(0.02) do
-        if not Network or not Breakables then continue end
+    while task.wait() do
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
         if not hrp then continue end
 
+        local luckyBlockOrCometTarget = nil
         local pinataTarget = nil
-        local directEventTarget = nil
         local hasJarEvent = false
         local nearbyBreakables = {}
 
         for _, v in pairs(Breakables:GetChildren()) do
             if v:IsA("Model") then
                 local pos = v:GetPivot().Position
-                if (pos - hrp.Position).Magnitude <= 250 then
+                local dist = (pos - hrp.Position).Magnitude
+
+                if dist <= 300 then
                     local id = tostring(v:GetAttribute("BreakableID") or v.Name):lower()
                     
-                    if id:find("jar") or id:find("coinjar") or id:find("itemjar") then
+                    -- Priority 1: Lucky Block or Comet
+                    if id:find("luckyblock") or id:find("comet") then
+                        luckyBlockOrCometTarget = v.Name
+                    -- Priority 2: Jar Detection
+                    elseif id:find("jar") or id:find("coinjar") or id:find("itemjar") then
                         hasJarEvent = true
-                    elseif id:find("luckyblock") or id:find("comet") then
-                        directEventTarget = v.Name
+                    -- Priority 3: Piñata
                     elseif id == "pinata" or id:find("pinata") then
                         pinataTarget = v.Name
+                    -- Priority 4: Normal Breakables
                     else
                         table.insert(nearbyBreakables, v.Name)
                     end
@@ -434,8 +310,9 @@ task.spawn(function()
 
         local targetToHit = nil
 
-        if directEventTarget then
-            targetToHit = directEventTarget
+        -- Execution Hierarchy
+        if luckyBlockOrCometTarget then
+            targetToHit = luckyBlockOrCometTarget
         elseif hasJarEvent and #nearbyBreakables > 0 then
             targetToHit = nearbyBreakables[math.random(1, #nearbyBreakables)]
         elseif pinataTarget then
@@ -445,47 +322,54 @@ task.spawn(function()
         end
 
         if targetToHit then
-            pcall(function()
-                Network.UnreliableFire("Breakables_PlayerDealDamage", targetToHit)
-            end)
+            Network.UnreliableFire("Breakables_PlayerDealDamage", targetToHit)
+            task.wait(0.05)
         end
     end
 end)
 
--- MULTI-REMOTE PIÑATA SPAWN ENGINE
+-- AREA 99 TELEPORT & PIÑATA CONSUME LOOP (EXACT LOGIC FROM YOUR REFERENCE)
 task.spawn(function()
-    while task.wait(0.3) do
-        safeTeleportToArea99()
+    while task.wait() do
+        if GetPinataUID() then
+            for _, v in pairs(Areas) do
+                -- Check for INTERACT folder and teleport to persistent pad if missing
+                if not v:FindFirstChild("INTERACT") then 
+                    repeat 
+                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                            LocalPlayer.Character.HumanoidRootPart.CFrame = v.PERSISTENT.Teleport.CFrame 
+                        end
+                        task.wait(0.1) 
+                    until v:FindFirstChild("INTERACT") 
+                end
 
-        local pinataUid = getPinataUID()
-        local activePinataExists = isPinataActive()
+                -- Teleport directly to the Break Zone CFrame
+                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                    LocalPlayer.Character.HumanoidRootPart.CFrame = v.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+                end
 
-        if pinataUid and not activePinataExists and Network then
-            local success = false
-
-            -- Try Remote Method 1: Misc_Consume with UID
-            pcall(function()
-                success = Network.Invoke("Misc_Consume", pinataUid)
-            end)
-
-            -- Try Remote Method 2: Misc_Consume with Item ID string
-            if not success then
-                pcall(function()
-                    success = Network.Invoke("Misc_Consume", "Mini Pinata")
-                end)
+                -- Firing MiniPinata_Consume with retry check
+                local uid = GetPinataUID()
+                if uid then
+                    local a, msg = Network.Invoke("MiniPinata_Consume", uid)
+                    if not a and (msg ~= "There is already something in this area!" and msg ~= "There are too many random events already in the world!") then 
+                        repeat 
+                            local currentUid = GetPinataUID()
+                            if currentUid then
+                                a, msg = Network.Invoke("MiniPinata_Consume", currentUid) 
+                            end
+                            task.wait(0.1) 
+                        until a or not GetPinataUID()
+                    end
+                    
+                    if a then
+                        pinatasSpawned = pinatasSpawned + 1
+                    end
+                end
             end
-
-            -- Try Remote Method 3: Legacy MiniPinata_Consume fallback
-            if not success then
-                pcall(function()
-                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
-                end)
-            end
-
-            if success then
-                pinatasSpawned = pinatasSpawned + 1
-                task.wait(0.5)
-            end
+        else
+            print("No pinata remaining in inventory.")
+            task.wait(1)
         end
     end
 end)
