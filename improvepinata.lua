@@ -44,13 +44,13 @@ for _, v in ipairs(Config.Areas) do
     end
 end
 
--- SPEED MULTIPLIER HOOK (FROM YOUR REFERENCE)
+-- SPEED MULTIPLIER HOOK
 pcall(function()
     local PlayerPet = require(Client:WaitForChild("PlayerPet"))
     hookfunction(PlayerPet.CalculateSpeedMultiplier, function() return 9999 end)
 end)
 
--- ANTI-IDLE (FROM YOUR REFERENCE)
+-- ANTI-IDLE
 pcall(function()
     LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
 end)
@@ -79,7 +79,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
--- GET PINATA UID (FROM YOUR REFERENCE)
+-- GET PINATA UID
 local PinataUid = nil
 local GetPinataUID = function()
     local saveData = Save.Get()
@@ -252,7 +252,7 @@ task.spawn(function()
     end
 end)
 
--- AUTO LOOTBAGS & ORBS (FROM YOUR REFERENCE)
+-- AUTO LOOTBAGS & ORBS
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
     workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
         task.wait()
@@ -266,12 +266,7 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     Network.Fire("Orbs: Collect", Orbs)
 end)
 
--- ADVANCED TARGETING & BREAKING ENGINE
--- Priority Order:
--- 1. Lucky Blocks & Comets (Nukes target directly)
--- 2. Coin Jars & Item Jars (Hits surrounding breakables to pop the jar)
--- 3. Piñatas (Nukes target directly)
--- 4. Standard Breakables in range (Clears area)
+-- UNIVERSAL TARGETING ENGINE (ALWAYS SCANS & ASSISTS WITH PINATAS)
 task.spawn(function()
     while task.wait() do
         local char = LocalPlayer.Character
@@ -289,18 +284,19 @@ task.spawn(function()
                 local dist = (pos - hrp.Position).Magnitude
 
                 if dist <= 300 then
-                    local id = tostring(v:GetAttribute("BreakableID") or v.Name):lower()
-                    
-                    -- Priority 1: Lucky Block or Comet
-                    if id:find("luckyblock") or id:find("comet") then
+                    local attrId = tostring(v:GetAttribute("BreakableID") or ""):lower()
+                    local modelName = v.Name:lower()
+
+                    -- Priority 1: Lucky Blocks & Comets
+                    if attrId:find("luckyblock") or attrId:find("comet") or modelName:find("luckyblock") or modelName:find("comet") then
                         luckyBlockOrCometTarget = v.Name
-                    -- Priority 2: Jar Detection
-                    elseif id:find("jar") or id:find("coinjar") or id:find("itemjar") then
+                    -- Priority 2: Coin/Item Jars
+                    elseif attrId:find("jar") or attrId:find("coinjar") or attrId:find("itemjar") or modelName:find("jar") then
                         hasJarEvent = true
-                    -- Priority 3: Piñata
-                    elseif id == "pinata" or id:find("pinata") then
+                    -- Priority 3: Piñatas (Own or Other Players' Spawned Piñatas)
+                    elseif attrId == "pinata" or attrId:find("pinata") or modelName:find("pinata") then
                         pinataTarget = v.Name
-                    -- Priority 4: Normal Breakables
+                    -- Priority 4: Standard Breakables
                     else
                         table.insert(nearbyBreakables, v.Name)
                     end
@@ -310,7 +306,7 @@ task.spawn(function()
 
         local targetToHit = nil
 
-        -- Execution Hierarchy
+        -- Priority Hierarchy Engine
         if luckyBlockOrCometTarget then
             targetToHit = luckyBlockOrCometTarget
         elseif hasJarEvent and #nearbyBreakables > 0 then
@@ -328,12 +324,14 @@ task.spawn(function()
     end
 end)
 
--- AREA 99 TELEPORT & PIÑATA CONSUME LOOP (EXACT LOGIC FROM YOUR REFERENCE)
+-- TELEPORT TO AREA 99 & AUTOMATIC PINATA CONSUME LOOP
 task.spawn(function()
-    while task.wait() do
-        if GetPinataUID() then
-            for _, v in pairs(Areas) do
-                -- Check for INTERACT folder and teleport to persistent pad if missing
+    while task.wait(0.5) do
+        for _, v in pairs(Areas) do
+            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+            
+            if hrp then
+                -- 1. Ensure INTERACT folder exists, or stay on Persistent Spawn
                 if not v:FindFirstChild("INTERACT") then 
                     repeat 
                         if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
@@ -343,12 +341,13 @@ task.spawn(function()
                     until v:FindFirstChild("INTERACT") 
                 end
 
-                -- Teleport directly to the Break Zone CFrame
-                if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                    LocalPlayer.Character.HumanoidRootPart.CFrame = v.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+                -- 2. Teleport directly to Break Zone in Area 99 if far away
+                local breakZone = v.INTERACT.BREAK_ZONES.BREAK_ZONE
+                if (hrp.Position - breakZone.Position).Magnitude > 20 then
+                    hrp.CFrame = breakZone.CFrame
                 end
 
-                -- Firing MiniPinata_Consume with retry check
+                -- 3. Consume Mini Piñata from Inventory (if available)
                 local uid = GetPinataUID()
                 if uid then
                     local a, msg = Network.Invoke("MiniPinata_Consume", uid)
@@ -367,9 +366,6 @@ task.spawn(function()
                     end
                 end
             end
-        else
-            print("No pinata remaining in inventory.")
-            task.wait(1)
         end
     end
 end)
