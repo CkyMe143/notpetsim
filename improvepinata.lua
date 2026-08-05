@@ -20,12 +20,6 @@ local function checkTargetArea()
     return "98 | Colorful Clouds"
 end
 
-getgenv().Config = {
-    ['Areas'] = {
-        checkTargetArea()
-    }
-}
-
 -- ====================================================================
 -- SERVICES & MODULE INITIALIZATION
 -- ====================================================================
@@ -44,20 +38,23 @@ local Client = Library and Library:WaitForChild("Client", 15)
 local Network = require(Client:WaitForChild("Network"))
 local Save = require(Client:WaitForChild("Save"))
 
-local Breakables = workspace['__THINGS'].Breakables
+local Breakables = workspace:WaitForChild("__THINGS", 15):WaitForChild("Breakables", 15)
 
-local function getAreaModels()
-    local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
-    local foundAreas = {}
-    local currentTarget = checkTargetArea()
+-- HELPER TO DYNAMICALLY LOCATE TARGET MAP MODEL
+local function getTargetAreaModel()
+    local targetName = checkTargetArea()
+    local mapNames = {"Map", "Map2", "Map3"}
     
-    local Area = Map and Map:FindFirstChild(currentTarget)
-    if Area then 
-        table.insert(foundAreas, Area)
-    else 
-        warn("Area not found: " .. currentTarget) 
+    for _, mapName in ipairs(mapNames) do
+        local mapFolder = workspace:FindFirstChild(mapName)
+        if mapFolder then
+            local areaModel = mapFolder:FindFirstChild(targetName)
+            if areaModel then
+                return areaModel, targetName
+            end
+        end
     end
-    return foundAreas
+    return nil, targetName
 end
 
 -- SPEED MULTIPLIER HOOK
@@ -252,6 +249,7 @@ task.spawn(function()
             local gRate = (giftBagsGained / se) * 60
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
+            local _, activeTarget = getTargetAreaModel()
 
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
@@ -260,7 +258,7 @@ task.spawn(function()
                 "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
                 "Gift Bags Gained: +%d (%.1f/min)\n" ..
                 "Large Gift Bags Gained: +%d (%.1f/min)",
-                checkTargetArea(),
+                activeTarget,
                 h, m, s, currentIdle,
                 pinatasSpawned, pRate,
                 giftBagsGained, gRate,
@@ -284,7 +282,7 @@ Network.Fired("Orbs: Create"):Connect(function(InfoTable)
     Network.Fire("Orbs: Collect", Orbs)
 end)
 
--- UNIVERSAL TARGETING ENGINE (ALWAYS SCANS & ASSISTS WITH PINATAS)
+-- UNIVERSAL TARGETING ENGINE
 task.spawn(function()
     while task.wait() do
         local char = LocalPlayer.Character
@@ -305,16 +303,12 @@ task.spawn(function()
                     local attrId = tostring(v:GetAttribute("BreakableID") or ""):lower()
                     local modelName = v.Name:lower()
 
-                    -- Priority 1: Lucky Blocks & Comets
                     if attrId:find("luckyblock") or attrId:find("comet") or modelName:find("luckyblock") or modelName:find("comet") then
                         luckyBlockOrCometTarget = v.Name
-                    -- Priority 2: Coin/Item Jars
                     elseif attrId:find("jar") or attrId:find("coinjar") or attrId:find("itemjar") or modelName:find("jar") then
                         hasJarEvent = true
-                    -- Priority 3: Piñatas (Own or Other Players' Spawned Piñatas)
                     elseif attrId == "pinata" or attrId:find("pinata") or modelName:find("pinata") then
                         pinataTarget = v.Name
-                    -- Priority 4: Standard Breakables
                     else
                         table.insert(nearbyBreakables, v.Name)
                     end
@@ -324,7 +318,6 @@ task.spawn(function()
 
         local targetToHit = nil
 
-        -- Priority Hierarchy Engine
         if luckyBlockOrCometTarget then
             targetToHit = luckyBlockOrCometTarget
         elseif hasJarEvent and #nearbyBreakables > 0 then
@@ -342,47 +335,46 @@ task.spawn(function()
     end
 end)
 
--- DYNAMIC TELEPORT & CONSUME LOOP
+-- SAFE TELEPORT & CONSUME LOOP
 task.spawn(function()
     while task.wait(0.5) do
-        local targetAreas = getAreaModels()
-        for _, v in pairs(targetAreas) do
-            local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-            
-            if hrp then
-                -- 1. Ensure INTERACT folder exists, or stay on Persistent Spawn
-                if not v:FindFirstChild("INTERACT") then 
+        local areaModel, targetName = getTargetAreaModel()
+        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        
+        if hrp and areaModel then
+            -- 1. Ensure INTERACT folder exists in the target area
+            local interactFolder = areaModel:FindFirstChild("INTERACT")
+            if not interactFolder then 
+                local persistent = areaModel:FindFirstChild("PERSISTENT")
+                if persistent and persistent:FindFirstChild("Teleport") then
+                    hrp.CFrame = persistent.Teleport.CFrame 
+                end
+                continue
+            end
+
+            -- 2. Teleport to Break Zone safely
+            local breakZones = interactFolder:FindFirstChild("BREAK_ZONES")
+            local breakZone = breakZones and breakZones:FindFirstChild("BREAK_ZONE")
+            if breakZone and (hrp.Position - breakZone.Position).Magnitude > 20 then
+                hrp.CFrame = breakZone.CFrame
+            end
+
+            -- 3. Consume Mini Piñata from Inventory (if available)
+            local uid = GetPinataUID()
+            if uid then
+                local a, msg = Network.Invoke("MiniPinata_Consume", uid)
+                if not a and (msg ~= "There is already something in this area!" and msg ~= "There are too many random events already in the world!") then 
                     repeat 
-                        if LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                            LocalPlayer.Character.HumanoidRootPart.CFrame = v.PERSISTENT.Teleport.CFrame 
+                        local currentUid = GetPinataUID()
+                        if currentUid then
+                            a, msg = Network.Invoke("MiniPinata_Consume", currentUid) 
                         end
                         task.wait(0.1) 
-                    until v:FindFirstChild("INTERACT") 
+                    until a or not GetPinataUID()
                 end
-
-                -- 2. Teleport directly to Break Zone in target area if far away
-                local breakZone = v.INTERACT.BREAK_ZONES.BREAK_ZONE
-                if (hrp.Position - breakZone.Position).Magnitude > 20 then
-                    hrp.CFrame = breakZone.CFrame
-                end
-
-                -- 3. Consume Mini Piñata from Inventory (if available)
-                local uid = GetPinataUID()
-                if uid then
-                    local a, msg = Network.Invoke("MiniPinata_Consume", uid)
-                    if not a and (msg ~= "There is already something in this area!" and msg ~= "There are too many random events already in the world!") then 
-                        repeat 
-                            local currentUid = GetPinataUID()
-                            if currentUid then
-                                a, msg = Network.Invoke("MiniPinata_Consume", currentUid) 
-                            end
-                            task.wait(0.1) 
-                        until a or not GetPinataUID()
-                    end
-                    
-                    if a then
-                        pinatasSpawned = pinatasSpawned + 1
-                    end
+                
+                if a then
+                    pinatasSpawned = pinatasSpawned + 1
                 end
             end
         end
