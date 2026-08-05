@@ -5,11 +5,24 @@ local LocalPlayer = Players.LocalPlayer
 repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
 -- ====================================================================
--- CONFIGURATION
+-- DYNAMIC AREA CONFIGURATION
 -- ====================================================================
+local WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" }
+
+local function checkTargetArea()
+    for _, player in ipairs(Players:GetPlayers()) do
+        for _, name in ipairs(WhitelistedUsers) do
+            if player.Name:lower() == name:lower() then
+                return "99 | Rainbow Road"
+            end
+        end
+    end
+    return "98 | Colorful Clouds"
+end
+
 getgenv().Config = {
     ['Areas'] = {
-        "98 | Colorful Clouds"
+        checkTargetArea()
     }
 }
 
@@ -32,16 +45,19 @@ local Network = require(Client:WaitForChild("Network"))
 local Save = require(Client:WaitForChild("Save"))
 
 local Breakables = workspace['__THINGS'].Breakables
-local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
-local Areas = {}
 
-for _, v in ipairs(Config.Areas) do
-    local Area = Map and Map:FindFirstChild(v)
+local function getAreaModels()
+    local Map = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+    local foundAreas = {}
+    local currentTarget = checkTargetArea()
+    
+    local Area = Map and Map:FindFirstChild(currentTarget)
     if Area then 
-        table.insert(Areas, Area)
+        table.insert(foundAreas, Area)
     else 
-        warn("Area not found: " .. v) 
+        warn("Area not found: " .. currentTarget) 
     end
+    return foundAreas
 end
 
 -- SPEED MULTIPLIER HOOK
@@ -239,10 +255,12 @@ task.spawn(function()
 
             txt.Text = string.format(
                 "=== ARCEUS X SESSION TRACKER ===\n" ..
+                "Target Area: %s\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
                 "Gift Bags Gained: +%d (%.1f/min)\n" ..
                 "Large Gift Bags Gained: +%d (%.1f/min)",
+                checkTargetArea(),
                 h, m, s, currentIdle,
                 pinatasSpawned, pRate,
                 giftBagsGained, gRate,
@@ -324,10 +342,11 @@ task.spawn(function()
     end
 end)
 
--- TELEPORT TO AREA 99 & AUTOMATIC PINATA CONSUME LOOP
+-- DYNAMIC TELEPORT & CONSUME LOOP
 task.spawn(function()
     while task.wait(0.5) do
-        for _, v in pairs(Areas) do
+        local targetAreas = getAreaModels()
+        for _, v in pairs(targetAreas) do
             local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
             
             if hrp then
@@ -341,7 +360,7 @@ task.spawn(function()
                     until v:FindFirstChild("INTERACT") 
                 end
 
-                -- 2. Teleport directly to Break Zone in Area 99 if far away
+                -- 2. Teleport directly to Break Zone in target area if far away
                 local breakZone = v.INTERACT.BREAK_ZONES.BREAK_ZONE
                 if (hrp.Position - breakZone.Position).Magnitude > 20 then
                     hrp.CFrame = breakZone.CFrame
