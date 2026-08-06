@@ -1,44 +1,38 @@
--- Wait until game & local player are loaded
+-- ====================================================================
+-- 1. DELTA STABILITY & CONNECTION GATE (STOPS ERROR 771 KICKS)
+-- ====================================================================
 if not game:IsLoaded() then game.Loaded:Wait() end
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
-repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
+-- Wait for critical map folders to anchor before running any code
+repeat task.wait(1) until workspace:FindFirstChild("__THINGS") 
+    and workspace.__THINGS:FindFirstChild("Breakables")
+    and game:GetService("Players").LocalPlayer 
+    and game:GetService("Players").LocalPlayer.Character
+
+-- CRUCIAL: Allow 15s for Delta and the Private Server handshake to settle
+task.wait(15) 
 
 -- ====================================================================
--- DYNAMIC AREA CONFIGURATION
+-- 2. DYNAMIC AREA TARGETING (PLAYER DETECTION)
 -- ====================================================================
+local DEFAULT_AREA = "98 | Colorful Clouds"
+local MAIN_AREA = "99 | Rainbow Road"
 local WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" }
 
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+
+-- DETERMINES AREA BASED ON TARGET PLAYERS IN SERVER
 local function checkTargetArea()
     for _, player in ipairs(Players:GetPlayers()) do
         for _, name in ipairs(WhitelistedUsers) do
             if player.Name:lower() == name:lower() then
-                return "99 | Rainbow Road"
+                return MAIN_AREA
             end
         end
     end
-    return "98 | Colorful Clouds"
+    return DEFAULT_AREA
 end
-
--- ====================================================================
--- SERVICES & MODULE INITIALIZATION
--- ====================================================================
-local HttpService = game:GetService("HttpService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local CoreGui = game:GetService("CoreGui")
-local SoundService = game:GetService("SoundService")
-local Lighting = game:GetService("Lighting")
-local UIS = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
-
-local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
-local Library = ReplicatedStorage:WaitForChild("Library", 15)
-local Client = Library and Library:WaitForChild("Client", 15)
-
-local Network = require(Client:WaitForChild("Network"))
-local Save = require(Client:WaitForChild("Save"))
-
-local Breakables = workspace:WaitForChild("__THINGS", 15):WaitForChild("Breakables", 15)
 
 -- HELPER TO DYNAMICALLY LOCATE TARGET MAP MODEL
 local function getTargetAreaModel()
@@ -57,20 +51,58 @@ local function getTargetAreaModel()
     return nil, targetName
 end
 
--- SPEED MULTIPLIER HOOK
+-- ====================================================================
+-- 3. SERVICES & SAFE MODULE INITIALIZATION
+-- ====================================================================
+local HttpService = game:GetService("HttpService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local CoreGui = game:GetService("CoreGui")
+local SoundService = game:GetService("SoundService")
+local Lighting = game:GetService("Lighting")
+local UIS = game:GetService("UserInputService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
+local Library = ReplicatedStorage:WaitForChild("Library", 15)
+local Client = Library and Library:WaitForChild("Client", 15)
+
+local Network, Save
 pcall(function()
-    local PlayerPet = require(Client:WaitForChild("PlayerPet"))
-    hookfunction(PlayerPet.CalculateSpeedMultiplier, function() return 9999 end)
+    Network = require(Client:WaitForChild("Network", 10))
+    Save = require(Client:WaitForChild("Save", 10))
+end)
+
+local Breakables = workspace.__THINGS:WaitForChild("Breakables", 15)
+
+-- SAFE PET SPEED HOOK (PCALL PROTECTED FOR DELTA)
+pcall(function()
+    if Client and hookfunction then
+        local PlayerPetMod = Client:FindFirstChild("PlayerPet")
+        if PlayerPetMod then
+            local PlayerPet = require(PlayerPetMod)
+            if PlayerPet and PlayerPet.CalculateSpeedMultiplier then
+                hookfunction(PlayerPet.CalculateSpeedMultiplier, function() return 9999 end)
+            end
+        end
+    end
 end)
 
 -- ANTI-IDLE
 pcall(function()
-    LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
+    if LocalPlayer:FindFirstChild("PlayerScripts") then
+        LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
+    end
 end)
 LocalPlayer.Idled:Connect(function()
     VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
     task.wait(1)
     VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+end)
+
+-- GRAPHICS OPTIMIZATION (LOWERS RAM LOAD ON CLONES)
+pcall(function()
+    settings().Rendering.QualityLevel = 1
+    Lighting.GlobalShadows = false
 end)
 
 -- TRACKING COUNTERS
@@ -95,6 +127,7 @@ end)
 -- GET PINATA UID
 local PinataUid = nil
 local GetPinataUID = function()
+    if not Save then return nil end
     local saveData = Save.Get()
     if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return nil end
     local Misc = saveData.Inventory.Misc
@@ -115,6 +148,7 @@ end
 
 -- SAVE INVENTORY TRACKER FOR GIFT BAGS
 local function updateGiftBagCountsFromSave()
+    if not Save then return end
     local saveData = Save.Get()
     if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return end
 
@@ -225,16 +259,18 @@ local function processItemName(itemName, amount)
 end
 
 pcall(function()
-    Network.Fired("Item_Gained"):Connect(function(itemId, amount)
-        processItemName(itemId, amount)
-    end)
-    Network.Fired("Lootbag: Claimed"):Connect(function(data)
-        if type(data) == "table" then
-            processItemName(data.id or data.Item, data.amount or data.Amt)
-        else
-            processItemName(data, 1)
-        end
-    end)
+    if Network then
+        Network.Fired("Item_Gained"):Connect(function(itemId, amount)
+            processItemName(itemId, amount)
+        end)
+        Network.Fired("Lootbag: Claimed"):Connect(function(data)
+            if type(data) == "table" then
+                processItemName(data.id or data.Item, data.amount or data.Amt)
+            else
+                processItemName(data, 1)
+            end
+        end)
+    end
 end)
 
 -- STATS UPDATE LOOP (/MIN RATES)
@@ -252,7 +288,7 @@ task.spawn(function()
             local _, activeTarget = getTargetAreaModel()
 
             txt.Text = string.format(
-                "=== ARCEUS X SESSION TRACKER ===\n" ..
+                "=== FARMING SESSION TRACKER ===\n" ..
                 "Target Area: %s\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
@@ -272,45 +308,51 @@ end)
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
     workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
         task.wait()
-        if lootbag then Network.Fire("Lootbags_Claim", { lootbag.Name }) end
+        if lootbag and Network then Network.Fire("Lootbags_Claim", { lootbag.Name }) end
     end)
 end
 
-Network.Fired("Orbs: Create"):Connect(function(InfoTable)
-    local Orbs = {}
-    for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
-    Network.Fire("Orbs: Collect", Orbs)
+pcall(function()
+    if Network then
+        Network.Fired("Orbs: Create"):Connect(function(InfoTable)
+            local Orbs = {}
+            for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
+            Network.Fire("Orbs: Collect", Orbs)
+        end)
+    end
 end)
 
 -- UNIVERSAL TARGETING ENGINE
 task.spawn(function()
-    while task.wait() do
+    while task.wait(0.1) do
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp then continue end
+        if not hrp or not Network then continue end
 
         local luckyBlockOrCometTarget = nil
         local pinataTarget = nil
         local hasJarEvent = false
         local nearbyBreakables = {}
 
-        for _, v in pairs(Breakables:GetChildren()) do
-            if v:IsA("Model") then
-                local pos = v:GetPivot().Position
-                local dist = (pos - hrp.Position).Magnitude
+        if Breakables then
+            for _, v in pairs(Breakables:GetChildren()) do
+                if v:IsA("Model") then
+                    local pos = v:GetPivot().Position
+                    local dist = (pos - hrp.Position).Magnitude
 
-                if dist <= 300 then
-                    local attrId = tostring(v:GetAttribute("BreakableID") or ""):lower()
-                    local modelName = v.Name:lower()
+                    if dist <= 300 then
+                        local attrId = tostring(v:GetAttribute("BreakableID") or ""):lower()
+                        local modelName = v.Name:lower()
 
-                    if attrId:find("luckyblock") or attrId:find("comet") or modelName:find("luckyblock") or modelName:find("comet") then
-                        luckyBlockOrCometTarget = v.Name
-                    elseif attrId:find("jar") or attrId:find("coinjar") or attrId:find("itemjar") or modelName:find("jar") then
-                        hasJarEvent = true
-                    elseif attrId == "pinata" or attrId:find("pinata") or modelName:find("pinata") then
-                        pinataTarget = v.Name
-                    else
-                        table.insert(nearbyBreakables, v.Name)
+                        if attrId:find("luckyblock") or attrId:find("comet") or modelName:find("luckyblock") or modelName:find("comet") then
+                            luckyBlockOrCometTarget = v.Name
+                        elseif attrId:find("jar") or attrId:find("coinjar") or attrId:find("itemjar") or modelName:find("jar") then
+                            hasJarEvent = true
+                        elseif attrId == "pinata" or attrId:find("pinata") or modelName:find("pinata") then
+                            pinataTarget = v.Name
+                        else
+                            table.insert(nearbyBreakables, v.Name)
+                        end
                     end
                 end
             end
@@ -330,19 +372,18 @@ task.spawn(function()
 
         if targetToHit then
             Network.UnreliableFire("Breakables_PlayerDealDamage", targetToHit)
-            task.wait(0.05)
         end
     end
 end)
 
--- SAFE TELEPORT & CONSUME LOOP
+-- SAFE TELEPORT & CONSUME LOOP (THROTTLED TO PREVENT DISCONNECTS)
 task.spawn(function()
-    while task.wait(0.5) do
-        local areaModel, targetName = getTargetAreaModel()
+    while task.wait(0.2) do
+        local areaModel = getTargetAreaModel()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         
-        if hrp and areaModel then
-            -- 1. Ensure INTERACT folder exists in the target area
+        if hrp and areaModel and Network then
+            -- 1. Check for INTERACT / PERSISTENT folders safely
             local interactFolder = areaModel:FindFirstChild("INTERACT")
             if not interactFolder then 
                 local persistent = areaModel:FindFirstChild("PERSISTENT")
@@ -359,22 +400,13 @@ task.spawn(function()
                 hrp.CFrame = breakZone.CFrame
             end
 
-            -- 3. Consume Mini Piñata from Inventory (if available)
+            -- 3. Consume Mini Piñata (Rate-limited to prevent network drops)
             local uid = GetPinataUID()
             if uid then
                 local a, msg = Network.Invoke("MiniPinata_Consume", uid)
-                if not a and (msg ~= "There is already something in this area!" and msg ~= "There are too many random events already in the world!") then 
-                    repeat 
-                        local currentUid = GetPinataUID()
-                        if currentUid then
-                            a, msg = Network.Invoke("MiniPinata_Consume", currentUid) 
-                        end
-                        task.wait(0.1) 
-                    until a or not GetPinataUID()
-                end
-                
                 if a then
                     pinatasSpawned = pinatasSpawned + 1
+                    task.wait(0.2) -- Rate limit buffer
                 end
             end
         end
