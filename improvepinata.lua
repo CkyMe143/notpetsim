@@ -87,16 +87,47 @@ pcall(function()
     end
 end)
 
--- ANTI-IDLE
+-- ====================================================================
+-- ANTI-IDLE SYSTEM (INCLUDES JUMP, PHYSICAL MOVEMENT & CLICK)
+-- ====================================================================
 pcall(function()
     if LocalPlayer:FindFirstChild("PlayerScripts") then
         LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
     end
 end)
+
+-- Engine-level Idle Interceptor
 LocalPlayer.Idled:Connect(function()
     VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
     task.wait(1)
     VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+end)
+
+-- Active Physical Movement Loop (Triggers every 180 seconds / 3 minutes)
+task.spawn(function()
+    while task.wait(180) do
+        pcall(function()
+            local char = LocalPlayer.Character
+            local hum = char and char:FindFirstChildOfClass("Humanoid")
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+            if hum and hrp then
+                -- 1. Perform Jump
+                hum.Jump = true
+                
+                -- 2. Physical Walk Nudge (Step Forward & Back)
+                hum:Move(Vector3.new(0, 0, -1), true)
+                task.wait(0.3)
+                hum:Move(Vector3.new(0, 0, 1), true)
+                task.wait(0.3)
+                hum:Move(Vector3.new(0, 0, 0), false)
+
+                -- 3. Virtual Click Event
+                VirtualUser:CaptureController()
+                VirtualUser:ClickButton2(Vector2.new(100, 100))
+            end
+        end)
+    end
 end)
 
 -- GRAPHICS OPTIMIZATION (LOWERS RAM LOAD ON CLONES)
