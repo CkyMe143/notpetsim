@@ -13,7 +13,7 @@ repeat task.wait(1) until workspace:FindFirstChild("__THINGS")
 task.wait(15) 
 
 -- ====================================================================
--- 2. DYNAMIC AREA TARGETING (PLAYER DETECTION)
+-- 2. DYNAMIC AREA TARGETING (DYNAMIC PLAYER DETECTION)
 -- ====================================================================
 local DEFAULT_AREA = "98 | Colorful Clouds"
 local MAIN_AREA = "99 | Rainbow Road"
@@ -22,7 +22,7 @@ local WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" }
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- DETERMINES AREA BASED ON TARGET PLAYERS IN SERVER
+-- CONTINUOUSLY SCANS FOR TARGET USERS
 local function checkTargetArea()
     for _, player in ipairs(Players:GetPlayers()) do
         for _, name in ipairs(WhitelistedUsers) do
@@ -376,10 +376,10 @@ task.spawn(function()
     end
 end)
 
--- SAFE TELEPORT & CONSUME LOOP (THROTTLED TO PREVENT DISCONNECTS)
+-- TELEPORT & CONSUME LOOP (DYNAMICALLY EVALUATES AREA EVERY 1 SECOND)
 task.spawn(function()
-    while task.wait(0.2) do
-        local areaModel = getTargetAreaModel()
+    while task.wait(1) do
+        local areaModel, currentArea = getTargetAreaModel()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         
         if hrp and areaModel and Network then
@@ -393,7 +393,7 @@ task.spawn(function()
                 continue
             end
 
-            -- 2. Teleport to Break Zone safely
+            -- 2. Teleport to Break Zone safely (Will shift if target player joins/leaves)
             local breakZones = interactFolder:FindFirstChild("BREAK_ZONES")
             local breakZone = breakZones and breakZones:FindFirstChild("BREAK_ZONE")
             if breakZone and (hrp.Position - breakZone.Position).Magnitude > 20 then
@@ -406,7 +406,7 @@ task.spawn(function()
                 local a, msg = Network.Invoke("MiniPinata_Consume", uid)
                 if a then
                     pinatasSpawned = pinatasSpawned + 1
-                    task.wait(0.2) -- Rate limit buffer
+                    task.wait(0.1) -- Rate limit buffer
                 end
             end
         end
