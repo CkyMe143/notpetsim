@@ -8,8 +8,8 @@ getgenv().Config = {
     
     AntiAFK = {
         Enabled = true,
-        Interval = 180, -- Seconds between physical movement
-        WalkDistance = 0.3 -- Walking duration
+        Interval = 180,
+        WalkDistance = 0.3
     },
     
     Targeting = {
@@ -37,7 +37,7 @@ until (workspace:FindFirstChild("__THINGS")
     and game:GetService("Players").LocalPlayer.Character) 
     or (tick() - startLoadTime > 30)
 
-task.wait(15) 
+task.wait(10) 
 
 -- ====================================================================
 -- 2. SERVICES & CORE INITIALIZATION
@@ -47,7 +47,6 @@ local LocalPlayer = Players.LocalPlayer
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
-local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
 local UIS = game:GetService("UserInputService")
 local VirtualUser = game:GetService("VirtualUser")
@@ -65,14 +64,43 @@ end)
 local Breakables = workspace.__THINGS:WaitForChild("Breakables", 15)
 
 -- ====================================================================
--- 3. DYNAMIC AREA & PLAYER TARGETING ENGINE
+-- 3. USER PRESENCE & AREA SEARCH ENGINE
 -- ====================================================================
-local function getTargetPlayer()
+-- Checks BOTH account username and DisplayName
+local function isWhitelistedUserPresent()
     for _, player in ipairs(Players:GetPlayers()) do
         if player ~= LocalPlayer then
-            for _, name in ipairs(getgenv().Config.WhitelistedUsers) do
-                if player.Name:lower() == name:lower() then
-                    return player
+            for _, targetName in ipairs(getgenv().Config.WhitelistedUsers) do
+                local cleanTarget = targetName:lower()
+                if player.Name:lower() == cleanTarget or player.DisplayName:lower() == cleanTarget then
+                    return true, player
+                end
+            end
+        end
+    end
+    return false, nil
+end
+
+-- Locates Area folder anywhere inside Workspace Map containers
+local function findAreaModel(areaName)
+    local possibleContainers = {
+        workspace,
+        workspace:FindFirstChild("Map"),
+        workspace:FindFirstChild("Map2"),
+        workspace:FindFirstChild("Map3"),
+        workspace:FindFirstChild("__THINGS")
+    }
+
+    for _, container in ipairs(possibleContainers) do
+        if container then
+            -- Exact match
+            local exact = container:FindFirstChild(areaName)
+            if exact then return exact end
+
+            -- Partial match (in case of folder name differences)
+            for _, child in ipairs(container:GetChildren()) do
+                if child.Name:lower():find(areaName:lower()) or areaName:lower():find(child.Name:lower()) then
+                    return child
                 end
             end
         end
@@ -80,27 +108,12 @@ local function getTargetPlayer()
     return nil
 end
 
-local function checkTargetArea()
-    if getTargetPlayer() then
-        return getgenv().Config.MainArea
-    end
-    return getgenv().Config.DefaultArea
-end
-
 local function getTargetAreaModel()
-    local targetName = checkTargetArea()
-    local mapNames = {"Map", "Map2", "Map3"}
+    local isPresent, targetPlayer = isWhitelistedUserPresent()
+    local areaToFind = isPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
     
-    for _, mapName in ipairs(mapNames) do
-        local mapFolder = workspace:FindFirstChild(mapName)
-        if mapFolder then
-            local areaModel = mapFolder:FindFirstChild(targetName)
-            if areaModel then
-                return areaModel, targetName
-            end
-        end
-    end
-    return nil, targetName
+    local model = findAreaModel(areaToFind)
+    return model, areaToFind, isPresent, targetPlayer
 end
 
 -- ====================================================================
@@ -173,7 +186,6 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
--- GET PINATA UID
 local PinataUid = nil
 local GetPinataUID = function()
     if not Save then return nil end
@@ -333,15 +345,18 @@ task.spawn(function()
             local gRate = (giftBagsGained / se) * 60
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
-            local _, activeTarget = getTargetAreaModel()
+            local _, activeTarget, isUserPresent, foundUser = getTargetAreaModel()
 
             txt.Text = string.format(
                 "=== FARMING SESSION TRACKER ===\n" ..
+                "Whitelisted User Present: %s (%s)\n" ..
                 "Target Area: %s\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
                 "Gift Bags Gained: +%d (%.1f/min)\n" ..
                 "Large Gift Bags Gained: +%d (%.1f/min)",
+                tostring(isUserPresent),
+                foundUser and foundUser.Name or "None",
                 activeTarget,
                 h, m, s, currentIdle,
                 pinatasSpawned, pRate,
@@ -430,35 +445,32 @@ end)
 
 task.spawn(function()
     while task.wait(1) do
-        local areaModel, currentArea = getTargetAreaModel()
+        local areaModel, targetAreaName, isUserPresent, targetPlayer = getTargetAreaModel()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         
         if hrp and Network then
-            local targetPlayer = getTargetPlayer()
-            local targetChar = targetPlayer and targetPlayer.Character
-            local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
-
-            if getgenv().Config.Targeting.TeleportToPlayer and targetHRP and targetHRP.Parent and targetHRP:IsA("BasePart") then
-                if (hrp.Position - targetHRP.Position).Magnitude > 15 then
-                    local targetCF = targetHRP.CFrame
-                    if targetCF then
-                        hrp.CFrame = targetCF * CFrame.new(0, 0, 3)
-                    end
+            -- Option A: Directly Teleport to the Target Player if Online
+            if isUserPresent and getgenv().Config.Targeting.TeleportToPlayer and targetPlayer and targetPlayer.Character then
+                local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if targetHRP and (hrp.Position - targetHRP.Position).Magnitude > 15 then
+                    hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
                 end
+            -- Option B: Teleport to Area Map BreakZone
             elseif areaModel then
                 local interactFolder = areaModel:FindFirstChild("INTERACT")
-                if not interactFolder then 
+                local breakZone = interactFolder and interactFolder:FindFirstChild("BREAK_ZONES") and interactFolder.BREAK_ZONES:FindFirstChild("BREAK_ZONE")
+                
+                if breakZone then
+                    if (hrp.Position - breakZone.Position).Magnitude > 20 then
+                        hrp.CFrame = breakZone.CFrame
+                    end
+                else
                     local persistent = areaModel:FindFirstChild("PERSISTENT")
                     if persistent and persistent:FindFirstChild("Teleport") then
-                        hrp.CFrame = persistent.Teleport.CFrame 
+                        if (hrp.Position - persistent.Teleport.Position).Magnitude > 20 then
+                            hrp.CFrame = persistent.Teleport.CFrame
+                        end
                     end
-                    continue
-                end
-
-                local breakZones = interactFolder:FindFirstChild("BREAK_ZONES")
-                local breakZone = breakZones and breakZones:FindFirstChild("BREAK_ZONE")
-                if breakZone and (hrp.Position - breakZone.Position).Magnitude > 20 then
-                    hrp.CFrame = breakZone.CFrame
                 end
             end
 
