@@ -44,7 +44,6 @@ task.wait(10)
 -- ====================================================================
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
 local Lighting = game:GetService("Lighting")
@@ -64,25 +63,35 @@ end)
 local Breakables = workspace.__THINGS:WaitForChild("Breakables", 15)
 
 -- ====================================================================
--- 3. USER PRESENCE & AREA SEARCH ENGINE
+-- 3. USER CHECK & GAME TELEPORT FUNCTION
 -- ====================================================================
--- Checks BOTH account username and DisplayName
 local function isWhitelistedUserPresent()
     for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            for _, targetName in ipairs(getgenv().Config.WhitelistedUsers) do
-                local cleanTarget = targetName:lower()
-                if player.Name:lower() == cleanTarget or player.DisplayName:lower() == cleanTarget then
-                    return true, player
-                end
+        local pName = player.Name:lower()
+        local pDisplay = player.DisplayName:lower()
+        
+        for _, targetName in ipairs(getgenv().Config.WhitelistedUsers) do
+            local cleanTarget = targetName:lower()
+            if pName == cleanTarget or pDisplay == cleanTarget then
+                return true, player
             end
         end
     end
     return false, nil
 end
 
--- Locates Area folder anywhere inside Workspace Map containers
-local function findAreaModel(areaName)
+local function teleportToArea(areaName)
+    -- 1. Try Game Native Remote Teleport (Forces area chunk loading)
+    if Network then
+        pcall(function()
+            Network.Invoke("Teleport To Area", areaName)
+        end)
+        pcall(function()
+            Network.Invoke("Teleport", areaName)
+        end)
+    end
+
+    -- 2. Fallback Physical CFrame Teleport if map model is streamed in
     local possibleContainers = {
         workspace,
         workspace:FindFirstChild("Map"),
@@ -93,27 +102,24 @@ local function findAreaModel(areaName)
 
     for _, container in ipairs(possibleContainers) do
         if container then
-            -- Exact match
-            local exact = container:FindFirstChild(areaName)
-            if exact then return exact end
-
-            -- Partial match (in case of folder name differences)
-            for _, child in ipairs(container:GetChildren()) do
-                if child.Name:lower():find(areaName:lower()) or areaName:lower():find(child.Name:lower()) then
-                    return child
+            local areaModel = container:FindFirstChild(areaName)
+            if areaModel then
+                local interactFolder = areaModel:FindFirstChild("INTERACT")
+                local breakZone = interactFolder and interactFolder:FindFirstChild("BREAK_ZONES") and interactFolder.BREAK_ZONES:FindFirstChild("BREAK_ZONE")
+                
+                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    if breakZone then
+                        hrp.CFrame = breakZone.CFrame
+                    elseif areaModel:FindFirstChild("PERSISTENT") and areaModel.PERSISTENT:FindFirstChild("Teleport") then
+                        hrp.CFrame = areaModel.PERSISTENT.Teleport.CFrame
+                    end
                 end
+                return true
             end
         end
     end
-    return nil
-end
-
-local function getTargetAreaModel()
-    local isPresent, targetPlayer = isWhitelistedUserPresent()
-    local areaToFind = isPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
-    
-    local model = findAreaModel(areaToFind)
-    return model, areaToFind, isPresent, targetPlayer
+    return false
 end
 
 -- ====================================================================
@@ -345,11 +351,12 @@ task.spawn(function()
             local gRate = (giftBagsGained / se) * 60
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
-            local _, activeTarget, isUserPresent, foundUser = getTargetAreaModel()
+            local isUserPresent, foundUser = isWhitelistedUserPresent()
+            local activeTarget = isUserPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
 
             txt.Text = string.format(
                 "=== FARMING SESSION TRACKER ===\n" ..
-                "Whitelisted User Present: %s (%s)\n" ..
+                "Whitelisted User Online: %s (%s)\n" ..
                 "Target Area: %s\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
@@ -368,7 +375,7 @@ task.spawn(function()
 end)
 
 -- ====================================================================
--- 7. LOOTBAGS, BREAKABLES & TELEPORTATION LOOPS
+-- 7. LOOTBAGS, BREAKABLES & MAIN TELEPORT LOOPS
 -- ====================================================================
 if _G.LootbagConnection then _G.LootbagConnection:Disconnect() end
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
@@ -443,35 +450,23 @@ task.spawn(function()
     end
 end)
 
+-- CORE TELEPORT LOOP
 task.spawn(function()
-    while task.wait(1) do
-        local areaModel, targetAreaName, isUserPresent, targetPlayer = getTargetAreaModel()
+    while task.wait(3) do
+        local isPresent, targetPlayer = isWhitelistedUserPresent()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-        
+
         if hrp and Network then
-            -- Option A: Directly Teleport to the Target Player if Online
-            if isUserPresent and getgenv().Config.Targeting.TeleportToPlayer and targetPlayer and targetPlayer.Character then
+            -- Option A: Teleport to Whitelisted Player if nearby
+            if isPresent and targetPlayer and targetPlayer ~= LocalPlayer and targetPlayer.Character then
                 local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if targetHRP and (hrp.Position - targetHRP.Position).Magnitude > 15 then
+                if targetHRP and (hrp.Position - targetHRP.Position).Magnitude > 20 then
                     hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
                 end
-            -- Option B: Teleport to Area Map BreakZone
-            elseif areaModel then
-                local interactFolder = areaModel:FindFirstChild("INTERACT")
-                local breakZone = interactFolder and interactFolder:FindFirstChild("BREAK_ZONES") and interactFolder.BREAK_ZONES:FindFirstChild("BREAK_ZONE")
-                
-                if breakZone then
-                    if (hrp.Position - breakZone.Position).Magnitude > 20 then
-                        hrp.CFrame = breakZone.CFrame
-                    end
-                else
-                    local persistent = areaModel:FindFirstChild("PERSISTENT")
-                    if persistent and persistent:FindFirstChild("Teleport") then
-                        if (hrp.Position - persistent.Teleport.Position).Magnitude > 20 then
-                            hrp.CFrame = persistent.Teleport.CFrame
-                        end
-                    end
-                end
+            else
+                -- Option B: Force Teleport to target Area (Area 99 if Whitelisted, Area 98 if not)
+                local targetArea = isPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
+                teleportToArea(targetArea)
             end
 
             local uid = GetPinataUID()
