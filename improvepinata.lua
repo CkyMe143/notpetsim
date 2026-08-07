@@ -1,275 +1,196 @@
+-- Wait until game & local player are completely loaded
+if not game:IsLoaded() then game.Loaded:Wait() end
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
+repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+
 -- ====================================================================
--- GEN.V CONFIGURATION SETUP
+-- CONFIGURATION
 -- ====================================================================
 getgenv().Config = {
-    WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" },
-    MainArea = "99 | Rainbow Road",
-    DefaultArea = "98 | Colorful Clouds",
-    
-    AntiAFK = {
-        Enabled = true,
-        Interval = 180,
-        WalkDistance = 0.3
+    ['AreaName'] = "99 | Rainbow Road", -- Strictly Area 99
+    ['EnableFollow'] = true,            -- Follow target ONLY when truly out of piñatas
+    ['TargetUsers'] = {                -- Main accounts that spawn piñatas (ONLY THESE WILL PING)
+        "Cleave_Luckyy",
+        "Karma_Luckyy"
     },
-    
-    Targeting = {
-        BreakableRadius = 300,
-        TeleportToPlayer = true
-    },
-    
-    Graphics = {
-        LowQuality = true,
-        DisableShadows = true
-    }
+    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
+    ['DiscordUserId'] = "1256971111300726845"        -- Discord User ID for @mention
 }
 
 -- ====================================================================
--- 1. DELTA STABILITY & CONNECTION GATE
+-- SERVICES & SAFE MODULE INITIALIZATION
 -- ====================================================================
-if not game:IsLoaded() then game.Loaded:Wait() end
-
-local startLoadTime = tick()
-repeat 
-    task.wait(0.5) 
-until (workspace:FindFirstChild("__THINGS") 
-    and workspace.__THINGS:FindFirstChild("Breakables") 
-    and game:GetService("Players").LocalPlayer 
-    and game:GetService("Players").LocalPlayer.Character) 
-    or (tick() - startLoadTime > 30)
-
-task.wait(10) 
-
--- ====================================================================
--- 2. SERVICES & CORE INITIALIZATION
--- ====================================================================
-local Players = game:GetService("Players")
-local LocalPlayer = Players.LocalPlayer
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local VirtualInputManager = game:GetService("VirtualInputManager")
 local CoreGui = game:GetService("CoreGui")
+local SoundService = game:GetService("SoundService")
 local Lighting = game:GetService("Lighting")
 local UIS = game:GetService("UserInputService")
-local VirtualUser = game:GetService("VirtualUser")
+local HttpService = game:GetService("HttpService")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library", 15)
 local Client = Library and Library:WaitForChild("Client", 15)
 
+if not Client then
+    warn("Failed to locate Client Library!")
+    return
+end
+
+-- Safely require core network & save modules with retries
 local Network, Save
-pcall(function()
-    Network = require(Client:WaitForChild("Network", 10))
-    Save = require(Client:WaitForChild("Save", 10))
-end)
-
-local Breakables = workspace.__THINGS:WaitForChild("Breakables", 15)
-
--- ====================================================================
--- 3. USER CHECK & GAME TELEPORT FUNCTION
--- ====================================================================
-local function isWhitelistedUserPresent()
-    for _, player in ipairs(Players:GetPlayers()) do
-        local pName = player.Name:lower()
-        local pDisplay = player.DisplayName:lower()
-        
-        for _, targetName in ipairs(getgenv().Config.WhitelistedUsers) do
-            local cleanTarget = targetName:lower()
-            if pName == cleanTarget or pDisplay == cleanTarget then
-                return true, player
-            end
-        end
-    end
-    return false, nil
-end
-
-local KnownAreaCoordinates = {
-    ["99 | Rainbow Road"] = CFrame.new(2280, 70, -3850),
-    ["98 | Colorful Clouds"] = CFrame.new(2280, 70, -3450)
-}
-
-local function teleportToArea(areaName)
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-
-    -- 1. Non-blocking Game Remote Teleport
-    if Network then
-        task.spawn(function()
-            pcall(function() Network.Invoke("Teleport To Area", areaName) end)
-        end)
-        task.spawn(function()
-            pcall(function() Network.Invoke("Teleport", areaName) end)
-        end)
-    end
-
-    -- 2. Try Physical Workspace Search
-    local possibleContainers = {
-        workspace,
-        workspace:FindFirstChild("Map"),
-        workspace:FindFirstChild("Map2"),
-        workspace:FindFirstChild("Map3"),
-        workspace:FindFirstChild("__THINGS")
-    }
-
-    for _, container in ipairs(possibleContainers) do
-        if container then
-            local areaModel = container:FindFirstChild(areaName)
-            if areaModel then
-                local interactFolder = areaModel:FindFirstChild("INTERACT")
-                local breakZone = interactFolder and interactFolder:FindFirstChild("BREAK_ZONES") and interactFolder.BREAK_ZONES:FindFirstChild("BREAK_ZONE")
-                
-                if breakZone then
-                    hrp.CFrame = breakZone.CFrame * CFrame.new(0, 3, 0)
-                    return true
-                elseif areaModel:FindFirstChild("PERSISTENT") and areaModel.PERSISTENT:FindFirstChild("Teleport") then
-                    hrp.CFrame = areaModel.PERSISTENT.Teleport.CFrame * CFrame.new(0, 3, 0)
-                    return true
-                end
-            end
-        end
-    end
-
-    -- 3. Hard-Coded Coordinate Fallback
-    if KnownAreaCoordinates[areaName] then
-        hrp.CFrame = KnownAreaCoordinates[areaName]
-        return true
-    end
-
-    return false
-end
-
--- ====================================================================
--- 4. ANTI-IDLE SYSTEM
--- ====================================================================
-if getgenv().Config.AntiAFK.Enabled then
+for i = 1, 10 do
     pcall(function()
-        if LocalPlayer:FindFirstChild("PlayerScripts") then
-            LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
-        end
+        Network = require(Client:WaitForChild("Network", 5))
+        Save = require(Client:WaitForChild("Save", 5))
     end)
-
-    LocalPlayer.Idled:Connect(function()
-        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-        task.wait(1)
-        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-    end)
-
-    task.spawn(function()
-        while task.wait(getgenv().Config.AntiAFK.Interval) do
-            pcall(function()
-                local char = LocalPlayer.Character
-                local hum = char and char:FindFirstChildOfClass("Humanoid")
-                local hrp = char and char:FindFirstChild("HumanoidRootPart")
-
-                if hum and hrp and hum.Health > 0 then
-                    hum.Jump = true
-                    hum:Move(Vector3.new(0, 0, -1), true)
-                    task.wait(getgenv().Config.AntiAFK.WalkDistance)
-                    
-                    if hum and hum.Parent then
-                        hum:Move(Vector3.new(0, 0, 1), true)
-                        task.wait(getgenv().Config.AntiAFK.WalkDistance)
-                    end
-                    
-                    if hum and hum.Parent then
-                        hum:Move(Vector3.new(0, 0, 0), false)
-                    end
-
-                    VirtualUser:CaptureController()
-                    VirtualUser:ClickButton2(Vector2.new(100, 100))
-                end
-            end)
-        end
-    end)
+    if Network and Save then break end
+    task.wait(1)
 end
 
--- ====================================================================
--- 5. OPTIMIZATIONS & TRACKERS
--- ====================================================================
-if getgenv().Config.Graphics.LowQuality then
-    pcall(function()
-        settings().Rendering.QualityLevel = 1
-        Lighting.GlobalShadows = not getgenv().Config.Graphics.DisableShadows
-    end)
-end
+local Breakables = workspace:WaitForChild("__THINGS", 10) and workspace.__THINGS:WaitForChild("Breakables", 10)
 
+-- TRACKING COUNTERS
 local st = os.time()
+local scriptStartTime = os.time()
 local pinatasSpawned = 0
 local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
+local hasAlertedDepleted = false 
 
-local initialGiftBags = 0
-local initialLargeGiftBags = 0
-local hasInitializedBagBaseline = false
+local function resetIdleTimer()
+    lastInput = tick()
+end
 
-local function resetIdleTimer() lastInput = tick() end
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
-local PinataUid = nil
-local GetPinataUID = function()
-    if not Save then return nil end
-    local saveData = Save.Get()
-    if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return nil end
-    local Misc = saveData.Inventory.Misc
+UIS.InputChanged:Connect(function(input, gameProcessed)
+    if not gameProcessed then resetIdleTimer() end
+end)
 
-    if PinataUid then
-        local Entry = Misc[PinataUid]
-        if Entry and Entry.id == "Mini Pinata" then return PinataUid end
-        PinataUid = nil
+-- Safe Inventory Finder (Mini Piñata ONLY)
+local cachedPinataUid = nil
+local function getPinataUID()
+    if not Save then return cachedPinataUid end
+    local saveData = nil
+    pcall(function() saveData = Save.Get() end)
+
+    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
+        return cachedPinataUid 
     end
-    for uid, v in pairs(Misc) do
-        if v.id == "Mini Pinata" then 
-            PinataUid = uid 
+    
+    local Misc = saveData.Inventory.Misc
+    if cachedPinataUid and Misc[cachedPinataUid] and Misc[cachedPinataUid].id == "Mini Pinata" then
+        return cachedPinataUid
+    end
+    
+    cachedPinataUid = nil
+    for uid, item in pairs(Misc) do
+        if type(item) == "table" and item.id == "Mini Pinata" then 
+            cachedPinataUid = uid 
             return uid 
         end
     end
     return nil
 end
 
-local function updateGiftBagCountsFromSave()
-    if not Save then return end
-    local saveData = Save.Get()
-    if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return end
-
-    local currentGiftBags = 0
-    local currentLargeGiftBags = 0
-
-    for uid, item in pairs(saveData.Inventory.Misc) do
-        if type(item) == "table" and item.id then
-            local idLower = tostring(item.id):lower()
-            local amount = tonumber(item._am) or 1
-
-            if idLower == "large gift bag" or idLower == "giant gift bag" then
-                currentLargeGiftBags = currentLargeGiftBags + amount
-            elseif idLower == "gift bag" then
-                currentGiftBags = currentGiftBags + amount
+local function isPinataActive()
+    if not Breakables then return false end
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    for _, v in pairs(Breakables:GetChildren()) do
+        if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
+            local pos = v:GetPivot().Position
+            if (pos - hrp.Position).Magnitude <= 250 then
+                return true
             end
         end
     end
-
-    if not hasInitializedBagBaseline then
-        initialGiftBags = currentGiftBags
-        initialLargeGiftBags = currentLargeGiftBags
-        hasInitializedBagBaseline = true
-    else
-        if currentGiftBags >= initialGiftBags then
-            giftBagsGained = currentGiftBags - initialGiftBags
-        end
-        if currentLargeGiftBags >= initialLargeGiftBags then
-            largeGiftBagsGained = currentLargeGiftBags - initialLargeGiftBags
-        end
-    end
+    return false
 end
 
+local function getArea99CFrame()
+    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+    if mapFolder then
+        local area = mapFolder:FindFirstChild(Config.AreaName)
+        if area then
+            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") and area.INTERACT.BREAK_ZONES:FindFirstChild("BREAK_ZONE") then
+                return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+            elseif area:FindFirstChild("PERSISTENT") and area.PERSISTENT:FindFirstChild("Teleport") then
+                return area.PERSISTENT.Teleport.CFrame
+            end
+        end
+    end
+    return nil
+end
+
+-- Webhook Notifier
+local function sendDiscordWebhook()
+    local isTargetUser = false
+    for _, username in ipairs(Config.TargetUsers) do
+        if LocalPlayer.Name:lower() == tostring(username):lower() then
+            isTargetUser = true
+            break
+        end
+    end
+
+    if not isTargetUser then return end
+    if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then return end
+
+    local url = Config.WebhookUrl
+    if not url or url == "" then return end
+
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not httpRequest then return end
+
+    local userPing = Config.DiscordUserId ~= "" and ("<@" .. Config.DiscordUserId .. "> ") or ""
+
+    local payload = {
+        ["content"] = userPing .. "⚠️ **Mini Piñatas Depleted!**",
+        ["embeds"] = {{
+            ["title"] = "🪅 Account Out of Piñatas!",
+            ["color"] = 16711680,
+            ["fields"] = {
+                { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
+                { ["name"] = "Piñatas Spawned", ["value"] = tostring(pinatasSpawned), ["inline"] = true },
+                { ["name"] = "Gift Bags", ["value"] = "+" .. tostring(giftBagsGained), ["inline"] = true },
+                { ["name"] = "Large Gift Bags", ["value"] = "+" .. tostring(largeGiftBagsGained), ["inline"] = true }
+            },
+            ["footer"] = { ["text"] = "Arceus X PS99 Tracker" },
+            ["timestamp"] = DateTime.now():ToIsoDate()
+        }}
+    }
+
+    pcall(function()
+        httpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+-- Safe Mobile Optimizations
+pcall(function()
+    SoundService.Volume = 0
+    Lighting.GlobalShadows = false
+    Lighting.FogEnd = 9e9
+end)
+
+-- Memory Cleaner (Prevents executor memory leak slowdowns over long sessions)
 task.spawn(function()
-    while task.wait(5) do
-        updateGiftBagCountsFromSave()
+    while task.wait(180) do
+        pcall(function() gcinfo() end)
     end
 end)
 
--- ====================================================================
--- 6. UI INTERFACE
--- ====================================================================
+-- UI Setup
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
@@ -326,6 +247,7 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
+-- Item Processing
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -338,11 +260,12 @@ local function processItemName(itemName, amount)
     end
 end
 
-pcall(function()
-    if Network then
+if Network then
+    pcall(function()
         Network.Fired("Item_Gained"):Connect(function(itemId, amount)
             processItemName(itemId, amount)
         end)
+
         Network.Fired("Lootbag: Claimed"):Connect(function(data)
             if type(data) == "table" then
                 processItemName(data.id or data.Item, data.amount or data.Amt)
@@ -350,9 +273,30 @@ pcall(function()
                 processItemName(data, 1)
             end
         end)
+    end)
+end
+
+-- Anti-AFK Engine
+task.spawn(function()
+    while task.wait(120) do
+        pcall(function()
+            VirtualInputManager:SendKeyEvent(true, Enum.KeyCode.Space, false, game)
+            task.wait(0.1)
+            VirtualInputManager:SendKeyEvent(false, Enum.KeyCode.Space, false, game)
+
+            local char = LocalPlayer.Character
+            local hrp = char and char:FindFirstChild("HumanoidRootPart")
+            if hrp then
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, 0.05)
+                task.wait(0.1)
+                hrp.CFrame = hrp.CFrame * CFrame.new(0, 0, -0.05)
+            end
+            resetIdleTimer()
+        end)
     end
 end)
 
+-- Non-Yielding Stats Update
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -364,22 +308,18 @@ task.spawn(function()
             local gRate = (giftBagsGained / se) * 60
             local lRate = (largeGiftBagsGained / se) * 60
             local currentIdle = math.floor(tick() - lastInput)
-            local isUserPresent, foundUser = isWhitelistedUserPresent()
-            local activeTarget = isUserPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
 
             txt.Text = string.format(
-                "=== FARMING SESSION TRACKER ===\n" ..
-                "Whitelisted User Online: %s (%s)\n" ..
-                "Target Area: %s\n" ..
+                "=== ARCEUS X SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
-                "Mini Piñatas Spawned: %d (%.1f/min)\n" ..
-                "Gift Bags Gained: +%d (%.1f/min)\n" ..
-                "Large Gift Bags Gained: +%d (%.1f/min)",
-                tostring(isUserPresent),
-                foundUser and foundUser.Name or "None",
-                activeTarget,
+                "Mini Piñatas Spawned: %d\n" ..
+                "└ Rate: %.1f/min\n\n" ..
+                "Gift Bags Gained: +%d\n" ..
+                "└ Rate: %.1f/min\n\n" ..
+                "Large Gift Bags Gained: +%d\n" ..
+                "└ Rate: %.1f/min",
                 h, m, s, currentIdle,
-                pinatasSpawned, pRate,
+                pinatasSpawned, pRate, 
                 giftBagsGained, gRate,
                 largeGiftBagsGained, lRate
             )
@@ -387,113 +327,105 @@ task.spawn(function()
     end
 end)
 
--- ====================================================================
--- 7. LOOTBAGS, BREAKABLES & MAIN TELEPORT LOOPS
--- ====================================================================
-if _G.LootbagConnection then _G.LootbagConnection:Disconnect() end
+-- Auto Lootbags / Orbs
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
-    _G.LootbagConnection = workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
-        task.wait(0.1)
-        if lootbag and lootbag.Parent and Network then 
-            Network.Fire("Lootbags_Claim", { lootbag.Name }) 
+    workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
+        task.wait()
+        if lootbag and Network then 
+            pcall(function() 
+                Network.Fire("Lootbags_Claim", { lootbag.Name }) 
+            end)
         end
     end)
 end
 
-pcall(function()
-    if Network then
+if Network then
+    pcall(function()
         Network.Fired("Orbs: Create"):Connect(function(InfoTable)
             local Orbs = {}
             for _, v in ipairs(InfoTable) do table.insert(Orbs, v.id) end
-            Network.Fire("Orbs: Collect", Orbs)
+            Network.Fire("Orbs: Collect", Orbs) 
         end)
+    end)
+end
+
+-- HIGH-SPEED Auto-Damage Active Piñatas
+task.spawn(function()
+    while task.wait(0.1) do
+        if not Network or not Breakables then continue end
+        local char = LocalPlayer.Character
+        local hrp = char and char:FindFirstChild("HumanoidRootPart")
+        if not hrp then continue end
+
+        for _, v in pairs(Breakables:GetChildren()) do
+            if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
+                local pos = v:GetPivot().Position
+                if (pos - hrp.Position).Magnitude <= 250 then
+                    pcall(function()
+                        Network.UnreliableFire("Breakables_PlayerDealDamage", v.Name)
+                    end)
+                    task.wait(0.02)
+                end
+            end
+        end
     end
 end)
 
+-- HIGH-SPEED Main Farming / Spawning / Following Loop
+local lastSpawnTime = 0
 task.spawn(function()
     while task.wait(0.1) do
         local char = LocalPlayer.Character
         local hrp = char and char:FindFirstChild("HumanoidRootPart")
-        if not hrp or not Network then continue end
+        if not hrp then continue end
 
-        local luckyBlockOrCometTarget = nil
-        local pinataTarget = nil
-        local hasJarEvent = false
-        local nearbyBreakables = {}
+        local pinataUid = getPinataUID()
+        local activePinataExists = isPinataActive()
+        local recentlySpawned = (os.time() - lastSpawnTime) < 2
 
-        if Breakables then
-            for _, v in pairs(Breakables:GetChildren()) do
-                if v:IsA("Model") then
-                    local pos = v:GetPivot().Position
-                    local dist = (pos - hrp.Position).Magnitude
+        -- Priority 1: If we have piñatas or one is actively on screen
+        if pinataUid or activePinataExists or recentlySpawned then
+            hasAlertedDepleted = false
+            
+            local areaCF = getArea99CFrame()
+            if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
+                hrp.CFrame = areaCF
+            end
 
-                    if dist <= getgenv().Config.Targeting.BreakableRadius then
-                        local attrId = tostring(v:GetAttribute("BreakableID") or ""):lower()
-                        local modelName = v.Name:lower()
+            if pinataUid and not activePinataExists and Network then
+                local success = false
+                pcall(function()
+                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
+                end)
 
-                        if attrId:find("luckyblock") or attrId:find("comet") or modelName:find("luckyblock") or modelName:find("comet") then
-                            luckyBlockOrCometTarget = v.Name
-                        elseif attrId:find("jar") or attrId:find("coinjar") or attrId:find("itemjar") or modelName:find("jar") then
-                            hasJarEvent = true
-                        elseif attrId == "pinata" or attrId:find("pinata") or modelName:find("pinata") then
-                            pinataTarget = v.Name
-                        else
-                            table.insert(nearbyBreakables, v.Name)
+                if success then
+                    pinatasSpawned = pinatasSpawned + 1
+                    lastSpawnTime = os.time()
+                    task.wait(0.2)
+                end
+            end
+        -- Priority 2: Completely out of Piñatas
+        else
+            if not hasAlertedDepleted then
+                hasAlertedDepleted = true
+                sendDiscordWebhook()
+            end
+
+            if Config.EnableFollow then
+                pcall(function()
+                    local targetPlayer = nil
+                    for _, username in ipairs(Config.TargetUsers) do
+                        local p = Players:FindFirstChild(username)
+                        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+                            targetPlayer = p
+                            break
                         end
                     end
-                end
-            end
-        end
 
-        local targetToHit = nil
-
-        if luckyBlockOrCometTarget then
-            targetToHit = luckyBlockOrCometTarget
-        elseif hasJarEvent and #nearbyBreakables > 0 then
-            targetToHit = nearbyBreakables[math.random(1, #nearbyBreakables)]
-        elseif pinataTarget then
-            targetToHit = pinataTarget
-        elseif #nearbyBreakables > 0 then
-            targetToHit = nearbyBreakables[math.random(1, #nearbyBreakables)]
-        end
-
-        if targetToHit then
-            Network.UnreliableFire("Breakables_PlayerDealDamage", targetToHit)
-        end
-    end
-end)
-
--- CORE TELEPORT LOOP
-task.spawn(function()
-    while task.wait(3) do
-        local isPresent, targetPlayer = isWhitelistedUserPresent()
-        local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-
-        if hrp then
-            local targetArea = isPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
-            
-            -- Option A: Teleport directly to the Whitelisted Player if they exist and are not local
-            if isPresent and targetPlayer and targetPlayer ~= LocalPlayer and targetPlayer.Character then
-                local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if targetHRP then
-                    hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
-                else
-                    teleportToArea(targetArea)
-                end
-            else
-                -- Option B: Force move to Target Area coordinates
-                teleportToArea(targetArea)
-            end
-
-            if Network then
-                local uid = GetPinataUID()
-                if uid then
-                    local a, msg = Network.Invoke("MiniPinata_Consume", uid)
-                    if a then
-                        pinatasSpawned = pinatasSpawned + 1
-                        task.wait(0.1)
+                    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
+                        hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
                     end
-                end
+                end)
             end
         end
     end
