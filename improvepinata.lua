@@ -80,18 +80,26 @@ local function isWhitelistedUserPresent()
     return false, nil
 end
 
+local KnownAreaCoordinates = {
+    ["99 | Rainbow Road"] = CFrame.new(2280, 70, -3850),
+    ["98 | Colorful Clouds"] = CFrame.new(2280, 70, -3450)
+}
+
 local function teleportToArea(areaName)
-    -- 1. Try Game Native Remote Teleport (Forces area chunk loading)
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+
+    -- 1. Non-blocking Game Remote Teleport
     if Network then
-        pcall(function()
-            Network.Invoke("Teleport To Area", areaName)
+        task.spawn(function()
+            pcall(function() Network.Invoke("Teleport To Area", areaName) end)
         end)
-        pcall(function()
-            Network.Invoke("Teleport", areaName)
+        task.spawn(function()
+            pcall(function() Network.Invoke("Teleport", areaName) end)
         end)
     end
 
-    -- 2. Fallback Physical CFrame Teleport if map model is streamed in
+    -- 2. Try Physical Workspace Search
     local possibleContainers = {
         workspace,
         workspace:FindFirstChild("Map"),
@@ -107,18 +115,23 @@ local function teleportToArea(areaName)
                 local interactFolder = areaModel:FindFirstChild("INTERACT")
                 local breakZone = interactFolder and interactFolder:FindFirstChild("BREAK_ZONES") and interactFolder.BREAK_ZONES:FindFirstChild("BREAK_ZONE")
                 
-                local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    if breakZone then
-                        hrp.CFrame = breakZone.CFrame
-                    elseif areaModel:FindFirstChild("PERSISTENT") and areaModel.PERSISTENT:FindFirstChild("Teleport") then
-                        hrp.CFrame = areaModel.PERSISTENT.Teleport.CFrame
-                    end
+                if breakZone then
+                    hrp.CFrame = breakZone.CFrame * CFrame.new(0, 3, 0)
+                    return true
+                elseif areaModel:FindFirstChild("PERSISTENT") and areaModel.PERSISTENT:FindFirstChild("Teleport") then
+                    hrp.CFrame = areaModel.PERSISTENT.Teleport.CFrame * CFrame.new(0, 3, 0)
+                    return true
                 end
-                return true
             end
         end
     end
+
+    -- 3. Hard-Coded Coordinate Fallback
+    if KnownAreaCoordinates[areaName] then
+        hrp.CFrame = KnownAreaCoordinates[areaName]
+        return true
+    end
+
     return false
 end
 
@@ -456,25 +469,30 @@ task.spawn(function()
         local isPresent, targetPlayer = isWhitelistedUserPresent()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
 
-        if hrp and Network then
-            -- Option A: Teleport to Whitelisted Player if nearby
+        if hrp then
+            local targetArea = isPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
+            
+            -- Option A: Teleport directly to the Whitelisted Player if they exist and are not local
             if isPresent and targetPlayer and targetPlayer ~= LocalPlayer and targetPlayer.Character then
                 local targetHRP = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-                if targetHRP and (hrp.Position - targetHRP.Position).Magnitude > 20 then
+                if targetHRP then
                     hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
+                else
+                    teleportToArea(targetArea)
                 end
             else
-                -- Option B: Force Teleport to target Area (Area 99 if Whitelisted, Area 98 if not)
-                local targetArea = isPresent and getgenv().Config.MainArea or getgenv().Config.DefaultArea
+                -- Option B: Force move to Target Area coordinates
                 teleportToArea(targetArea)
             end
 
-            local uid = GetPinataUID()
-            if uid then
-                local a, msg = Network.Invoke("MiniPinata_Consume", uid)
-                if a then
-                    pinatasSpawned = pinatasSpawned + 1
-                    task.wait(0.1)
+            if Network then
+                local uid = GetPinataUID()
+                if uid then
+                    local a, msg = Network.Invoke("MiniPinata_Consume", uid)
+                    if a then
+                        pinatasSpawned = pinatasSpawned + 1
+                        task.wait(0.1)
+                    end
                 end
             end
         end
