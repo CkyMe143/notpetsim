@@ -1,13 +1,17 @@
 -- ====================================================================
--- 1. DELTA STABILITY & CONNECTION GATE (STOPS ERROR 771 KICKS)
+-- 1. DELTA STABILITY & CONNECTION GATE (WITH TIMEOUT SAFEGUARD)
 -- ====================================================================
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Wait for critical map folders to anchor before running any code
-repeat task.wait(1) until workspace:FindFirstChild("__THINGS") 
-    and workspace.__THINGS:FindFirstChild("Breakables")
+-- Safe loading gate to prevent infinite freezes (30-second timeout)
+local startLoadTime = tick()
+repeat 
+    task.wait(0.5) 
+until (workspace:FindFirstChild("__THINGS") 
+    and workspace.__THINGS:FindFirstChild("Breakables") 
     and game:GetService("Players").LocalPlayer 
-    and game:GetService("Players").LocalPlayer.Character
+    and game:GetService("Players").LocalPlayer.Character) 
+    or (tick() - startLoadTime > 30)
 
 -- CRUCIAL: Allow 15s for Delta and the Private Server handshake to settle
 task.wait(15) 
@@ -98,7 +102,7 @@ pcall(function()
 end)
 
 -- ====================================================================
--- ANTI-IDLE SYSTEM (INCLUDES JUMP, PHYSICAL MOVEMENT & CLICK)
+-- ANTI-IDLE SYSTEM (INCLUDES WALKING, JUMP, PHYSICAL MOVEMENT & CLICK)
 -- ====================================================================
 pcall(function()
     if LocalPlayer:FindFirstChild("PlayerScripts") then
@@ -121,13 +125,19 @@ task.spawn(function()
             local hum = char and char:FindFirstChildOfClass("Humanoid")
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
-            if hum and hrp then
+            if hum and hrp and hum.Health > 0 then
                 hum.Jump = true
                 hum:Move(Vector3.new(0, 0, -1), true)
                 task.wait(0.3)
-                hum:Move(Vector3.new(0, 0, 1), true)
-                task.wait(0.3)
-                hum:Move(Vector3.new(0, 0, 0), false)
+                
+                if hum and hum.Parent then
+                    hum:Move(Vector3.new(0, 0, 1), true)
+                    task.wait(0.3)
+                end
+                
+                if hum and hum.Parent then
+                    hum:Move(Vector3.new(0, 0, 0), false)
+                end
 
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.new(100, 100))
@@ -341,11 +351,14 @@ task.spawn(function()
     end
 end)
 
--- AUTO LOOTBAGS & ORBS
+-- SAFE AUTO LOOTBAGS & ORBS (PREVENTS MEMORY LEAKS)
+if _G.LootbagConnection then _G.LootbagConnection:Disconnect() end
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
-    workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
-        task.wait()
-        if lootbag and Network then Network.Fire("Lootbags_Claim", { lootbag.Name }) end
+    _G.LootbagConnection = workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
+        task.wait(0.1)
+        if lootbag and lootbag.Parent and Network then 
+            Network.Fire("Lootbags_Claim", { lootbag.Name }) 
+        end
     end)
 end
 
@@ -413,7 +426,7 @@ task.spawn(function()
     end
 end)
 
--- TELEPORT & CONSUME LOOP (TELEPORTS DIRECTLY TO TARGET USER OR BREAK ZONE)
+-- TELEPORT & CONSUME LOOP (WITH CFRAME VALIDATION)
 task.spawn(function()
     while task.wait(1) do
         local areaModel, currentArea = getTargetAreaModel()
@@ -425,10 +438,12 @@ task.spawn(function()
             local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
 
             -- 1. TELEPORT DIRECTLY TO TARGET PLAYER IF IN SERVER
-            if targetHRP then
+            if targetHRP and targetHRP.Parent and targetHRP:IsA("BasePart") then
                 if (hrp.Position - targetHRP.Position).Magnitude > 15 then
-                    -- Teleports 3 studs behind target player
-                    hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
+                    local targetCF = targetHRP.CFrame
+                    if targetCF then
+                        hrp.CFrame = targetCF * CFrame.new(0, 0, 3)
+                    end
                 end
             -- 2. FALLBACK TO STANDARD BREAK ZONE TELEPORT
             elseif areaModel then
