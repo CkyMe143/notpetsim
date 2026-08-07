@@ -1,9 +1,33 @@
 -- ====================================================================
--- 1. DELTA STABILITY & CONNECTION GATE (WITH TIMEOUT SAFEGUARD)
+-- GEN.V CONFIGURATION SETUP
+-- ====================================================================
+getgenv().Config = {
+    WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" },
+    MainArea = "99 | Rainbow Road",
+    DefaultArea = "98 | Colorful Clouds",
+    
+    AntiAFK = {
+        Enabled = true,
+        Interval = 180, -- Seconds between physical movement
+        WalkDistance = 0.3 -- Walking duration
+    },
+    
+    Targeting = {
+        BreakableRadius = 300,
+        TeleportToPlayer = true
+    },
+    
+    Graphics = {
+        LowQuality = true,
+        DisableShadows = true
+    }
+}
+
+-- ====================================================================
+-- 1. DELTA STABILITY & CONNECTION GATE
 -- ====================================================================
 if not game:IsLoaded() then game.Loaded:Wait() end
 
--- Safe loading gate to prevent infinite freezes (30-second timeout)
 local startLoadTime = tick()
 repeat 
     task.wait(0.5) 
@@ -13,61 +37,13 @@ until (workspace:FindFirstChild("__THINGS")
     and game:GetService("Players").LocalPlayer.Character) 
     or (tick() - startLoadTime > 30)
 
--- CRUCIAL: Allow 15s for Delta and the Private Server handshake to settle
 task.wait(15) 
 
 -- ====================================================================
--- 2. DYNAMIC AREA & PLAYER TARGETING
+-- 2. SERVICES & CORE INITIALIZATION
 -- ====================================================================
-local DEFAULT_AREA = "98 | Colorful Clouds"
-local MAIN_AREA = "99 | Rainbow Road"
-local WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" }
-
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-
--- GETS TARGET PLAYER INSTANCE IF IN SERVER
-local function getTargetPlayer()
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player ~= LocalPlayer then
-            for _, name in ipairs(WhitelistedUsers) do
-                if player.Name:lower() == name:lower() then
-                    return player
-                end
-            end
-        end
-    end
-    return nil
-end
-
--- CONTINUOUSLY SCANS FOR TARGET USERS
-local function checkTargetArea()
-    if getTargetPlayer() then
-        return MAIN_AREA
-    end
-    return DEFAULT_AREA
-end
-
--- HELPER TO DYNAMICALLY LOCATE TARGET MAP MODEL
-local function getTargetAreaModel()
-    local targetName = checkTargetArea()
-    local mapNames = {"Map", "Map2", "Map3"}
-    
-    for _, mapName in ipairs(mapNames) do
-        local mapFolder = workspace:FindFirstChild(mapName)
-        if mapFolder then
-            local areaModel = mapFolder:FindFirstChild(targetName)
-            if areaModel then
-                return areaModel, targetName
-            end
-        end
-    end
-    return nil, targetName
-end
-
--- ====================================================================
--- 3. SERVICES & SAFE MODULE INITIALIZATION
--- ====================================================================
 local HttpService = game:GetService("HttpService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local CoreGui = game:GetService("CoreGui")
@@ -88,71 +64,100 @@ end)
 
 local Breakables = workspace.__THINGS:WaitForChild("Breakables", 15)
 
--- SAFE PET SPEED HOOK (PCALL PROTECTED FOR DELTA)
-pcall(function()
-    if Client and hookfunction then
-        local PlayerPetMod = Client:FindFirstChild("PlayerPet")
-        if PlayerPetMod then
-            local PlayerPet = require(PlayerPetMod)
-            if PlayerPet and PlayerPet.CalculateSpeedMultiplier then
-                hookfunction(PlayerPet.CalculateSpeedMultiplier, function() return 9999 end)
+-- ====================================================================
+-- 3. DYNAMIC AREA & PLAYER TARGETING ENGINE
+-- ====================================================================
+local function getTargetPlayer()
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer then
+            for _, name in ipairs(getgenv().Config.WhitelistedUsers) do
+                if player.Name:lower() == name:lower() then
+                    return player
+                end
             end
         end
     end
-end)
+    return nil
+end
 
--- ====================================================================
--- ANTI-IDLE SYSTEM (INCLUDES WALKING, JUMP, PHYSICAL MOVEMENT & CLICK)
--- ====================================================================
-pcall(function()
-    if LocalPlayer:FindFirstChild("PlayerScripts") then
-        LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
+local function checkTargetArea()
+    if getTargetPlayer() then
+        return getgenv().Config.MainArea
     end
-end)
+    return getgenv().Config.DefaultArea
+end
 
--- Engine-level Idle Interceptor
-LocalPlayer.Idled:Connect(function()
-    VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-    task.wait(1)
-    VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
-end)
-
--- Active Physical Movement Loop (Triggers every 180 seconds / 3 minutes)
-task.spawn(function()
-    while task.wait(180) do
-        pcall(function()
-            local char = LocalPlayer.Character
-            local hum = char and char:FindFirstChildOfClass("Humanoid")
-            local hrp = char and char:FindFirstChild("HumanoidRootPart")
-
-            if hum and hrp and hum.Health > 0 then
-                hum.Jump = true
-                hum:Move(Vector3.new(0, 0, -1), true)
-                task.wait(0.3)
-                
-                if hum and hum.Parent then
-                    hum:Move(Vector3.new(0, 0, 1), true)
-                    task.wait(0.3)
-                end
-                
-                if hum and hum.Parent then
-                    hum:Move(Vector3.new(0, 0, 0), false)
-                end
-
-                VirtualUser:CaptureController()
-                VirtualUser:ClickButton2(Vector2.new(100, 100))
+local function getTargetAreaModel()
+    local targetName = checkTargetArea()
+    local mapNames = {"Map", "Map2", "Map3"}
+    
+    for _, mapName in ipairs(mapNames) do
+        local mapFolder = workspace:FindFirstChild(mapName)
+        if mapFolder then
+            local areaModel = mapFolder:FindFirstChild(targetName)
+            if areaModel then
+                return areaModel, targetName
             end
-        end)
+        end
     end
-end)
+    return nil, targetName
+end
 
--- GRAPHICS OPTIMIZATION (LOWERS RAM LOAD ON CLONES)
-pcall(function()
-    settings().Rendering.QualityLevel = 1
-    Lighting.GlobalShadows = false
-end)
+-- ====================================================================
+-- 4. ANTI-IDLE SYSTEM
+-- ====================================================================
+if getgenv().Config.AntiAFK.Enabled then
+    pcall(function()
+        if LocalPlayer:FindFirstChild("PlayerScripts") then
+            LocalPlayer.PlayerScripts.Scripts.Core["Idle Tracking"].Enabled = false
+        end
+    end)
 
--- TRACKING COUNTERS
+    LocalPlayer.Idled:Connect(function()
+        VirtualUser:Button2Down(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+        task.wait(1)
+        VirtualUser:Button2Up(Vector2.new(0, 0), workspace.CurrentCamera.CFrame)
+    end)
+
+    task.spawn(function()
+        while task.wait(getgenv().Config.AntiAFK.Interval) do
+            pcall(function()
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local hrp = char and char:FindFirstChild("HumanoidRootPart")
+
+                if hum and hrp and hum.Health > 0 then
+                    hum.Jump = true
+                    hum:Move(Vector3.new(0, 0, -1), true)
+                    task.wait(getgenv().Config.AntiAFK.WalkDistance)
+                    
+                    if hum and hum.Parent then
+                        hum:Move(Vector3.new(0, 0, 1), true)
+                        task.wait(getgenv().Config.AntiAFK.WalkDistance)
+                    end
+                    
+                    if hum and hum.Parent then
+                        hum:Move(Vector3.new(0, 0, 0), false)
+                    end
+
+                    VirtualUser:CaptureController()
+                    VirtualUser:ClickButton2(Vector2.new(100, 100))
+                end
+            end)
+        end
+    end)
+end
+
+-- ====================================================================
+-- 5. OPTIMIZATIONS & TRACKERS
+-- ====================================================================
+if getgenv().Config.Graphics.LowQuality then
+    pcall(function()
+        settings().Rendering.QualityLevel = 1
+        Lighting.GlobalShadows = not getgenv().Config.Graphics.DisableShadows
+    end)
+end
+
 local st = os.time()
 local pinatasSpawned = 0
 local giftBagsGained = 0
@@ -163,10 +168,7 @@ local initialGiftBags = 0
 local initialLargeGiftBags = 0
 local hasInitializedBagBaseline = false
 
-local function resetIdleTimer()
-    lastInput = tick()
-end
-
+local function resetIdleTimer() lastInput = tick() end
 UIS.InputBegan:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
@@ -193,7 +195,6 @@ local GetPinataUID = function()
     return nil
 end
 
--- SAVE INVENTORY TRACKER FOR GIFT BAGS
 local function updateGiftBagCountsFromSave()
     if not Save then return end
     local saveData = Save.Get()
@@ -235,7 +236,9 @@ task.spawn(function()
     end
 end)
 
--- UI SETUP (WITH HIDE / SHOW TOGGLE)
+-- ====================================================================
+-- 6. UI INTERFACE
+-- ====================================================================
 if CG:FindFirstChild("AFK_Saver_UI") then CG.AFK_Saver_UI:Destroy() end
 if CG:FindFirstChild("AFK_Toggle_Btn") then CG.AFK_Toggle_Btn:Destroy() end
 
@@ -292,7 +295,6 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- REALTIME ITEM LISTENERS
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -320,7 +322,6 @@ pcall(function()
     end
 end)
 
--- STATS UPDATE LOOP (/MIN RATES)
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -351,7 +352,9 @@ task.spawn(function()
     end
 end)
 
--- SAFE AUTO LOOTBAGS & ORBS (PREVENTS MEMORY LEAKS)
+-- ====================================================================
+-- 7. LOOTBAGS, BREAKABLES & TELEPORTATION LOOPS
+-- ====================================================================
 if _G.LootbagConnection then _G.LootbagConnection:Disconnect() end
 if workspace:FindFirstChild("__THINGS") and workspace.__THINGS:FindFirstChild("Lootbags") then
     _G.LootbagConnection = workspace.__THINGS.Lootbags.ChildAdded:Connect(function(lootbag)
@@ -372,7 +375,6 @@ pcall(function()
     end
 end)
 
--- UNIVERSAL TARGETING ENGINE
 task.spawn(function()
     while task.wait(0.1) do
         local char = LocalPlayer.Character
@@ -390,7 +392,7 @@ task.spawn(function()
                     local pos = v:GetPivot().Position
                     local dist = (pos - hrp.Position).Magnitude
 
-                    if dist <= 300 then
+                    if dist <= getgenv().Config.Targeting.BreakableRadius then
                         local attrId = tostring(v:GetAttribute("BreakableID") or ""):lower()
                         local modelName = v.Name:lower()
 
@@ -426,7 +428,6 @@ task.spawn(function()
     end
 end)
 
--- TELEPORT & CONSUME LOOP (WITH CFRAME VALIDATION)
 task.spawn(function()
     while task.wait(1) do
         local areaModel, currentArea = getTargetAreaModel()
@@ -437,15 +438,13 @@ task.spawn(function()
             local targetChar = targetPlayer and targetPlayer.Character
             local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
 
-            -- 1. TELEPORT DIRECTLY TO TARGET PLAYER IF IN SERVER
-            if targetHRP and targetHRP.Parent and targetHRP:IsA("BasePart") then
+            if getgenv().Config.Targeting.TeleportToPlayer and targetHRP and targetHRP.Parent and targetHRP:IsA("BasePart") then
                 if (hrp.Position - targetHRP.Position).Magnitude > 15 then
                     local targetCF = targetHRP.CFrame
                     if targetCF then
                         hrp.CFrame = targetCF * CFrame.new(0, 0, 3)
                     end
                 end
-            -- 2. FALLBACK TO STANDARD BREAK ZONE TELEPORT
             elseif areaModel then
                 local interactFolder = areaModel:FindFirstChild("INTERACT")
                 if not interactFolder then 
@@ -463,7 +462,6 @@ task.spawn(function()
                 end
             end
 
-            -- 3. Consume Mini Piñata
             local uid = GetPinataUID()
             if uid then
                 local a, msg = Network.Invoke("MiniPinata_Consume", uid)
