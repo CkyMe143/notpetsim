@@ -13,7 +13,7 @@ repeat task.wait(1) until workspace:FindFirstChild("__THINGS")
 task.wait(15) 
 
 -- ====================================================================
--- 2. DYNAMIC AREA TARGETING (DYNAMIC PLAYER DETECTION)
+-- 2. DYNAMIC AREA & PLAYER TARGETING
 -- ====================================================================
 local DEFAULT_AREA = "98 | Colorful Clouds"
 local MAIN_AREA = "99 | Rainbow Road"
@@ -22,14 +22,24 @@ local WhitelistedUsers = { "Karma_Luckyy", "Cleave_Luckyy" }
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
 
--- CONTINUOUSLY SCANS FOR TARGET USERS
-local function checkTargetArea()
+-- GETS TARGET PLAYER INSTANCE IF IN SERVER
+local function getTargetPlayer()
     for _, player in ipairs(Players:GetPlayers()) do
-        for _, name in ipairs(WhitelistedUsers) do
-            if player.Name:lower() == name:lower() then
-                return MAIN_AREA
+        if player ~= LocalPlayer then
+            for _, name in ipairs(WhitelistedUsers) do
+                if player.Name:lower() == name:lower() then
+                    return player
+                end
             end
         end
+    end
+    return nil
+end
+
+-- CONTINUOUSLY SCANS FOR TARGET USERS
+local function checkTargetArea()
+    if getTargetPlayer() then
+        return MAIN_AREA
     end
     return DEFAULT_AREA
 end
@@ -112,17 +122,13 @@ task.spawn(function()
             local hrp = char and char:FindFirstChild("HumanoidRootPart")
 
             if hum and hrp then
-                -- 1. Perform Jump
                 hum.Jump = true
-                
-                -- 2. Physical Walk Nudge (Step Forward & Back)
                 hum:Move(Vector3.new(0, 0, -1), true)
                 task.wait(0.3)
                 hum:Move(Vector3.new(0, 0, 1), true)
                 task.wait(0.3)
                 hum:Move(Vector3.new(0, 0, 0), false)
 
-                -- 3. Virtual Click Event
                 VirtualUser:CaptureController()
                 VirtualUser:ClickButton2(Vector2.new(100, 100))
             end
@@ -407,37 +413,48 @@ task.spawn(function()
     end
 end)
 
--- TELEPORT & CONSUME LOOP (DYNAMICALLY EVALUATES AREA EVERY 1 SECOND)
+-- TELEPORT & CONSUME LOOP (TELEPORTS DIRECTLY TO TARGET USER OR BREAK ZONE)
 task.spawn(function()
     while task.wait(1) do
         local areaModel, currentArea = getTargetAreaModel()
         local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         
-        if hrp and areaModel and Network then
-            -- 1. Check for INTERACT / PERSISTENT folders safely
-            local interactFolder = areaModel:FindFirstChild("INTERACT")
-            if not interactFolder then 
-                local persistent = areaModel:FindFirstChild("PERSISTENT")
-                if persistent and persistent:FindFirstChild("Teleport") then
-                    hrp.CFrame = persistent.Teleport.CFrame 
+        if hrp and Network then
+            local targetPlayer = getTargetPlayer()
+            local targetChar = targetPlayer and targetPlayer.Character
+            local targetHRP = targetChar and targetChar:FindFirstChild("HumanoidRootPart")
+
+            -- 1. TELEPORT DIRECTLY TO TARGET PLAYER IF IN SERVER
+            if targetHRP then
+                if (hrp.Position - targetHRP.Position).Magnitude > 15 then
+                    -- Teleports 3 studs behind target player
+                    hrp.CFrame = targetHRP.CFrame * CFrame.new(0, 0, 3)
                 end
-                continue
+            -- 2. FALLBACK TO STANDARD BREAK ZONE TELEPORT
+            elseif areaModel then
+                local interactFolder = areaModel:FindFirstChild("INTERACT")
+                if not interactFolder then 
+                    local persistent = areaModel:FindFirstChild("PERSISTENT")
+                    if persistent and persistent:FindFirstChild("Teleport") then
+                        hrp.CFrame = persistent.Teleport.CFrame 
+                    end
+                    continue
+                end
+
+                local breakZones = interactFolder:FindFirstChild("BREAK_ZONES")
+                local breakZone = breakZones and breakZones:FindFirstChild("BREAK_ZONE")
+                if breakZone and (hrp.Position - breakZone.Position).Magnitude > 20 then
+                    hrp.CFrame = breakZone.CFrame
+                end
             end
 
-            -- 2. Teleport to Break Zone safely (Will shift if target player joins/leaves)
-            local breakZones = interactFolder:FindFirstChild("BREAK_ZONES")
-            local breakZone = breakZones and breakZones:FindFirstChild("BREAK_ZONE")
-            if breakZone and (hrp.Position - breakZone.Position).Magnitude > 20 then
-                hrp.CFrame = breakZone.CFrame
-            end
-
-            -- 3. Consume Mini Piñata (Rate-limited to prevent network drops)
+            -- 3. Consume Mini Piñata
             local uid = GetPinataUID()
             if uid then
                 local a, msg = Network.Invoke("MiniPinata_Consume", uid)
                 if a then
                     pinatasSpawned = pinatasSpawned + 1
-                    task.wait(0.1) -- Rate limit buffer
+                    task.wait(0.1)
                 end
             end
         end
