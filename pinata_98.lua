@@ -15,7 +15,8 @@ getgenv().Config = {
         "dfly10109"
     },
     ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
-    ['DiscordUserId'] = "1256971111300726845"        -- Discord User ID for @mention
+    ['DiscordUserId'] = "1256971111300726845",        -- Discord User ID for @mention
+    ['GoogleSheetUrl'] = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" -- Paste your Google Apps Web App URL here
 }
 
 -- ====================================================================
@@ -114,6 +115,31 @@ local function getPinataUID()
     return nil
 end
 
+-- Google Sheets Logger Function
+local function sendToGoogleSheets()
+    local url = Config.GoogleSheetUrl
+    if not url or url == "" or url == "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" then return end
+
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request or HttpService.RequestAsync
+    if not httpRequest then return end
+
+    local payload = {
+        account = LocalPlayer.Name,
+        pinatas = currentPinataCount,
+        largeBags = currentLargeGiftBagCount,
+        giftBags = currentGiftBagCount
+    }
+
+    pcall(function()
+        httpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
 -- Webhook Notifier for Depleted Piñatas
 local function sendDiscordWebhook()
     local isTargetUser = false
@@ -161,7 +187,7 @@ local function sendDiscordWebhook()
     end)
 end
 
--- Webhook Notifier for Unused/Stuck Piñatas (5 Minute Inactivity Alert)
+-- Webhook Notifier for Unused/Stuck Piñatas
 local function sendStuckPinataWebhook()
     local isTargetUser = false
     for _, username in ipairs(Config.TargetUsers) do
@@ -185,7 +211,7 @@ local function sendStuckPinataWebhook()
         ["content"] = userPing .. "🚨 **Warning: Piñata Usage Frozen!**",
         ["embeds"] = {{
             ["title"] = "⚠️ Account Has Unused Piñatas!",
-            ["color"] = 16753920, -- Orange Warning Highlight
+            ["color"] = 16753920,
             ["description"] = "Mini Piñata count in inventory has not changed for 5 minutes despite having stock remaining.",
             ["fields"] = {
                 { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
@@ -234,12 +260,10 @@ local function updateInventoryCountsFromSave()
         end
     end
 
-    -- Update Live Display Variables
     currentPinataCount = currentPinatas
     currentGiftBagCount = currentGiftBags
     currentLargeGiftBagCount = currentLargeGiftBags
 
-    -- Check if Piñatas are present but not decreasing for 5 minutes
     if currentPinatas > 0 then
         if currentPinatas ~= lastPinataCount then
             lastPinataCount = currentPinatas
@@ -273,10 +297,18 @@ local function updateInventoryCountsFromSave()
     end
 end
 
--- Poll Inventory every 3 seconds to ensure gain, current amount, and stuck status accuracy
+-- Poll Inventory every 3 seconds
 task.spawn(function()
     while task.wait(3) do
         updateInventoryCountsFromSave()
+    end
+end)
+
+-- Periodically Sync Live Stats to Google Sheets every 3 minutes
+task.spawn(function()
+    while true do
+        task.wait(180)
+        sendToGoogleSheets()
     end
 end)
 
@@ -310,14 +342,12 @@ local function getArea99CFrame()
     return nil
 end
 
--- Safe Mobile Optimizations
 pcall(function()
     SoundService.Volume = 0
     Lighting.GlobalShadows = false
     Lighting.FogEnd = 9e9
 end)
 
--- Memory Cleaner
 task.spawn(function()
     while task.wait(180) do
         pcall(function() gcinfo() end)
@@ -381,7 +411,6 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- Event-based fallback processing
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
