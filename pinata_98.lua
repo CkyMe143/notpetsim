@@ -12,7 +12,7 @@ getgenv().Config = {
     ['EnableFollow'] = true,            -- Follow target ONLY when truly out of piñatas
     ['TargetUsers'] = {                -- Main accounts that spawn piñatas (ONLY THESE WILL PING)
         "GabbyPoge127",
-        "Karma_Luckyy"
+        "dfly10109"
     },
     ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
     ['DiscordUserId'] = "1256971111300726845"        -- Discord User ID for @mention
