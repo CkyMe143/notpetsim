@@ -61,6 +61,11 @@ local largeGiftBagsGained = 0
 local lastInput = tick()
 local hasAlertedDepleted = false 
 
+-- STUCK / IDLE INVENTORY DETECTOR TRACKERS
+local lastPinataCount = -1
+local pinataCountLastChangedTime = os.time()
+local hasAlertedStuckPinata = false
+
 -- LIVE INVENTORY COUNTS
 local currentPinataCount = 0
 local currentGiftBagCount = 0
@@ -109,90 +114,7 @@ local function getPinataUID()
     return nil
 end
 
--- ACCURATE INVENTORY COUNTER & GAIN TRACKER
-local function updateInventoryCountsFromSave()
-    if not Save then return end
-    local saveData = nil
-    pcall(function() saveData = Save.Get() end)
-    
-    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then return end
-
-    local currentGiftBags = 0
-    local currentLargeGiftBags = 0
-    local currentPinatas = 0
-
-    for uid, item in pairs(saveData.Inventory.Misc) do
-        if type(item) == "table" and item.id then
-            local idLower = tostring(item.id):lower()
-            local amount = tonumber(item._am) or 1
-
-            if idLower == "large gift bag" or idLower == "giant gift bag" then
-                currentLargeGiftBags = currentLargeGiftBags + amount
-            elseif idLower == "gift bag" then
-                currentGiftBags = currentGiftBags + amount
-            elseif idLower == "mini pinata" then
-                currentPinatas = currentPinatas + amount
-            end
-        end
-    end
-
-    -- Update Live Display Variables
-    currentPinataCount = currentPinatas
-    currentGiftBagCount = currentGiftBags
-    currentLargeGiftBagCount = currentLargeGiftBags
-
-    if not hasInitializedBagBaseline then
-        initialGiftBags = currentGiftBags
-        initialLargeGiftBags = currentLargeGiftBags
-        hasInitializedBagBaseline = true
-    else
-        if currentGiftBags >= initialGiftBags then
-            giftBagsGained = currentGiftBags - initialGiftBags
-        end
-        if currentLargeGiftBags >= initialLargeGiftBags then
-            largeGiftBagsGained = currentLargeGiftBags - initialLargeGiftBags
-        end
-    end
-end
-
--- Poll Inventory every 3 seconds to ensure gain and current amount accuracy
-task.spawn(function()
-    while task.wait(3) do
-        updateInventoryCountsFromSave()
-    end
-end)
-
-local function isPinataActive()
-    if not Breakables then return false end
-    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
-    if not hrp then return false end
-    for _, v in pairs(Breakables:GetChildren()) do
-        if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
-            local pos = v:GetPivot().Position
-            if (pos - hrp.Position).Magnitude <= 250 then
-                return true
-            end
-        end
-    end
-    return false
-end
-
-local function getArea99CFrame()
-    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
-    if mapFolder then
-        local area = mapFolder:FindFirstChild(Config.AreaName)
-        if area then
-            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") and area.INTERACT.BREAK_ZONES:FindFirstChild("BREAK_ZONE") then
-                return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
-            elseif area:FindFirstChild("PERSISTENT") and area.PERSISTENT:FindFirstChild("Teleport") then
-                return area.PERSISTENT.Teleport.CFrame
-            end
-        end
-    end
-    return nil
-end
-
--- Webhook Notifier
+-- Webhook Notifier for Depleted Piñatas
 local function sendDiscordWebhook()
     local isTargetUser = false
     for _, username in ipairs(Config.TargetUsers) do
@@ -237,6 +159,155 @@ local function sendDiscordWebhook()
             Body = HttpService:JSONEncode(payload)
         })
     end)
+end
+
+-- Webhook Notifier for Unused/Stuck Piñatas (5 Minute Inactivity Alert)
+local function sendStuckPinataWebhook()
+    local isTargetUser = false
+    for _, username in ipairs(Config.TargetUsers) do
+        if LocalPlayer.Name:lower() == tostring(username):lower() then
+            isTargetUser = true
+            break
+        end
+    end
+
+    if not isTargetUser then return end
+
+    local url = Config.WebhookUrl
+    if not url or url == "" then return end
+
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not httpRequest then return end
+
+    local userPing = Config.DiscordUserId ~= "" and ("<@" .. Config.DiscordUserId .. "> ") or ""
+
+    local payload = {
+        ["content"] = userPing .. "🚨 **Warning: Piñata Usage Frozen!**",
+        ["embeds"] = {{
+            ["title"] = "⚠️ Account Has Unused Piñatas!",
+            ["color"] = 16753920, -- Orange Warning Highlight
+            ["description"] = "Mini Piñata count in inventory has not changed for 5 minutes despite having stock remaining.",
+            ["fields"] = {
+                { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
+                { ["name"] = "Remaining Piñatas", ["value"] = tostring(currentPinataCount), ["inline"] = true },
+                { ["name"] = "Idle Duration", ["value"] = "5 Minutes", ["inline"] = true }
+            },
+            ["footer"] = { ["text"] = "Arceus X PS99 Tracker" },
+            ["timestamp"] = DateTime.now():ToIsoDate()
+        }}
+    }
+
+    pcall(function()
+        httpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
+    end)
+end
+
+-- ACCURATE INVENTORY COUNTER, GAIN TRACKER & 5-MIN STUCK CHECKER
+local function updateInventoryCountsFromSave()
+    if not Save then return end
+    local saveData = nil
+    pcall(function() saveData = Save.Get() end)
+    
+    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then return end
+
+    local currentGiftBags = 0
+    local currentLargeGiftBags = 0
+    local currentPinatas = 0
+
+    for uid, item in pairs(saveData.Inventory.Misc) do
+        if type(item) == "table" and item.id then
+            local idLower = tostring(item.id):lower()
+            local amount = tonumber(item._am) or 1
+
+            if idLower == "large gift bag" or idLower == "giant gift bag" then
+                currentLargeGiftBags = currentLargeGiftBags + amount
+            elseif idLower == "gift bag" then
+                currentGiftBags = currentGiftBags + amount
+            elseif idLower == "mini pinata" then
+                currentPinatas = currentPinatas + amount
+            end
+        end
+    end
+
+    -- Update Live Display Variables
+    currentPinataCount = currentPinatas
+    currentGiftBagCount = currentGiftBags
+    currentLargeGiftBagCount = currentLargeGiftBags
+
+    -- Check if Piñatas are present but not decreasing for 5 minutes
+    if currentPinatas > 0 then
+        if currentPinatas ~= lastPinataCount then
+            lastPinataCount = currentPinatas
+            pinataCountLastChangedTime = os.time()
+            hasAlertedStuckPinata = false
+        else
+            if (os.time() - pinataCountLastChangedTime) >= 300 then
+                if not hasAlertedStuckPinata then
+                    hasAlertedStuckPinata = true
+                    sendStuckPinataWebhook()
+                end
+            end
+        end
+    else
+        lastPinataCount = 0
+        pinataCountLastChangedTime = os.time()
+        hasAlertedStuckPinata = false
+    end
+
+    if not hasInitializedBagBaseline then
+        initialGiftBags = currentGiftBags
+        initialLargeGiftBags = currentLargeGiftBags
+        hasInitializedBagBaseline = true
+    else
+        if currentGiftBags >= initialGiftBags then
+            giftBagsGained = currentGiftBags - initialGiftBags
+        end
+        if currentLargeGiftBags >= initialLargeGiftBags then
+            largeGiftBagsGained = currentLargeGiftBags - initialLargeGiftBags
+        end
+    end
+end
+
+-- Poll Inventory every 3 seconds to ensure gain, current amount, and stuck status accuracy
+task.spawn(function()
+    while task.wait(3) do
+        updateInventoryCountsFromSave()
+    end
+end)
+
+local function isPinataActive()
+    if not Breakables then return false end
+    local hrp = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if not hrp then return false end
+    for _, v in pairs(Breakables:GetChildren()) do
+        if v:IsA("Model") and v:GetAttribute("BreakableID") == "Pinata" then
+            local pos = v:GetPivot().Position
+            if (pos - hrp.Position).Magnitude <= 250 then
+                return true
+            end
+        end
+    end
+    return false
+end
+
+local function getArea99CFrame()
+    local mapFolder = workspace:FindFirstChild("Map") or workspace:FindFirstChild("Map2") or workspace:FindFirstChild("Map3")
+    if mapFolder then
+        local area = mapFolder:FindFirstChild(Config.AreaName)
+        if area then
+            if area:FindFirstChild("INTERACT") and area.INTERACT:FindFirstChild("BREAK_ZONES") and area.INTERACT.BREAK_ZONES:FindFirstChild("BREAK_ZONE") then
+                return area.INTERACT.BREAK_ZONES.BREAK_ZONE.CFrame
+            elseif area:FindFirstChild("PERSISTENT") and area.PERSISTENT:FindFirstChild("Teleport") then
+                return area.PERSISTENT.Teleport.CFrame
+            end
+        end
+    end
+    return nil
 end
 
 -- Safe Mobile Optimizations
@@ -359,7 +430,7 @@ task.spawn(function()
     end
 end)
 
--- Non-Yielding Stats Update (Rates formatted on dedicated separate lines)
+-- Non-Yielding Stats Update
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
