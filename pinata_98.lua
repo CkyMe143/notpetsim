@@ -16,7 +16,7 @@ getgenv().Config = {
     },
     ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
     ['DiscordUserId'] = "1256971111300726845",        -- Discord User ID for @mention
-    ['GoogleSheetUrl'] = "https://script.google.com/macros/s/AKfycbzD55fBc3Ia1F8rv3oQPtkIBrykrNNBr7OIW3lrGq0oXMZ59CwCj2HUCDtko-A6v7R6Vw/exec" -- Paste your Google Apps Web App URL here
+    ['GoogleSheetUrl'] = "https://script.google.com/macros/s/AKfycbzD55fBc3Ia1F8rv3oQPtkIBrykrNNBr7OIW3lrGq0oXMZ59CwCj2HUCDtko-A6v7R6Vw/exec" -- Google Sheet Web App URL
 }
 
 -- ====================================================================
@@ -118,7 +118,7 @@ end
 -- Google Sheets Logger Function
 local function sendToGoogleSheets()
     local url = Config.GoogleSheetUrl
-    if not url or url == "" or url == "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" then return end
+    if not url or url == "" or url:find("YOUR_") then return end
 
     local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request or HttpService.RequestAsync
     if not httpRequest then return end
@@ -139,6 +139,15 @@ local function sendToGoogleSheets()
         })
     end)
 end
+
+-- Google Sheets Auto Sync (Fires immediately, then every 3 minutes)
+task.spawn(function()
+    task.wait(5) -- Short delay for initial save file reading
+    while true do
+        sendToGoogleSheets()
+        task.wait(180) -- Repeat sync every 3 minutes
+    end
+end)
 
 -- Webhook Notifier for Depleted Piñatas
 local function sendDiscordWebhook()
@@ -301,14 +310,6 @@ end
 task.spawn(function()
     while task.wait(3) do
         updateInventoryCountsFromSave()
-    end
-end)
-
--- Periodically Sync Live Stats to Google Sheets every 3 minutes
-task.spawn(function()
-    while true do
-        task.wait(180)
-        sendToGoogleSheets()
     end
 end)
 
