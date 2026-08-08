@@ -267,12 +267,12 @@ bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 bg.BorderSizePixel = 0
 
 local txt = Instance.new("TextLabel", bg)
-txt.Size = UDim2.new(1, 0, 0.7, 0)
-txt.Position = UDim2.new(0, 0, 0.05, 0)
+txt.Size = UDim2.new(1, 0, 0.75, 0)
+txt.Position = UDim2.new(0, 0, 0.03, 0)
 txt.BackgroundTransparency = 1
 txt.TextColor3 = Color3.fromRGB(0, 255, 120)
 txt.Font = Enum.Font.Code
-txt.TextSize = 14
+txt.TextSize = 13
 txt.Text = "Starting Session Tracker..."
 
 local btn = Instance.new("TextButton", bg)
@@ -359,7 +359,7 @@ task.spawn(function()
     end
 end)
 
--- Non-Yielding Stats Update (Displays Both Current Inventory Counts and Session Gains)
+-- Non-Yielding Stats Update (Rates formatted on dedicated separate lines)
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -373,13 +373,22 @@ task.spawn(function()
             local currentIdle = math.floor(tick() - lastInput)
 
             txt.Text = string.format(
-                "=== DELTA SESSION TRACKER ===\n" ..
+                "=== ARCEUS X SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
-                "Mini Piñatas: %d In Inv  |  %d Spawned (%.1f/min)\n\n" ..
-                "Gift Bags: %d In Inv  |  +%d Gained (%.1f/min)\n\n" ..
-                "Large Gift Bags: %d In Inv  |  +%d Gained (%.1f/min)",
+                "Mini Piñatas:\n" ..
+                "├ In Inv: %d\n" ..
+                "├ Spawned: %d\n" ..
+                "└ Rate: %.1f/min\n\n" ..
+                "Gift Bags:\n" ..
+                "├ In Inv: %d\n" ..
+                "├ Gained: +%d\n" ..
+                "└ Rate: %.1f/min\n\n" ..
+                "Large Gift Bags:\n" ..
+                "├ In Inv: %d\n" ..
+                "├ Gained: +%d\n" ..
+                "└ Rate: %.1f/min",
                 h, m, s, currentIdle,
-                currentPinataCount, pinatasSpawned, pRate, 
+                currentPinataCount, pinatasSpawned, pRate,
                 currentGiftBagCount, giftBagsGained, gRate,
                 currentLargeGiftBagCount, largeGiftBagsGained, lRate
             )
