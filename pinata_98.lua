@@ -16,7 +16,7 @@ getgenv().Config = {
     },
     ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
     ['DiscordUserId'] = "1256971111300726845",        -- Discord User ID for @mention
-    ['GoogleSheetUrl'] = "YOUR_GOOGLE_APPS_SCRIPT_URL_HERE" -- Paste your Google Apps Web App URL here
+    ['GoogleSheetUrl'] = "https://script.google.com/macros/s/AKfycbzD55fBc3Ia1F8rv3oQPtkIBrykrNNBr7OIW3lrGq0oXMZ59CwCj2HUCDtko-A6v7R6Vw/exec" -- Paste your Google Apps Web App URL here
 }
 
 -- ====================================================================
