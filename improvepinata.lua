@@ -15,7 +15,8 @@ getgenv().Config = {
         "Karma_Luckyy"
     },
     ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
-    ['DiscordUserId'] = "1256971111300726845"        -- Discord User ID for @mention
+    ['DiscordUserId'] = "1256971111300726845",        -- Discord User ID for @mention
+    ['GoogleSheetUrl'] = "https://script.google.com/macros/s/AKfycbzD55fBc3Ia1F8rv3oQPtkIBrykrNNBr7OIW3lrGq0oXMZ59CwCj2HUCDtko-A6v7R6Vw/exec" -- Google Sheet Web App URL
 }
 
 -- ====================================================================
@@ -113,6 +114,43 @@ local function getPinataUID()
     end
     return nil
 end
+
+-- ====================================================================
+-- GOOGLE SHEETS LIVE SYNC ENGINE
+-- ====================================================================
+local function sendToGoogleSheets()
+    local url = Config.GoogleSheetUrl
+    if not url or url == "" or url:find("YOUR_") then return end
+
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not httpRequest then return end
+
+    local payload = {
+        ["account"] = LocalPlayer.Name,
+        ["pinatas"] = currentPinataCount,
+        ["giftBags"] = currentGiftBagCount,
+        ["largeBags"] = currentLargeGiftBagCount
+    }
+
+    pcall(function()
+        httpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload),
+            FollowRedirects = true
+        })
+    end)
+end
+
+-- Google Sheets Auto Sync (Fires immediately, then every 3 minutes)
+task.spawn(function()
+    task.wait(5) -- Small delay to allow inventory count initialization
+    while true do
+        sendToGoogleSheets()
+        task.wait(60) -- Sync every 3 minutes
+    end
+end)
 
 -- Webhook Notifier for Depleted Piñatas
 local function sendDiscordWebhook()
