@@ -61,6 +61,16 @@ local largeGiftBagsGained = 0
 local lastInput = tick()
 local hasAlertedDepleted = false 
 
+-- LIVE INVENTORY COUNTS
+local currentPinataCount = 0
+local currentGiftBagCount = 0
+local currentLargeGiftBagCount = 0
+
+-- BASELINE TRACKER FOR INVENTORY POLL
+local initialGiftBags = 0
+local initialLargeGiftBags = 0
+local hasInitializedBagBaseline = false
+
 local function resetIdleTimer()
     lastInput = tick()
 end
@@ -98,6 +108,59 @@ local function getPinataUID()
     end
     return nil
 end
+
+-- ACCURATE INVENTORY COUNTER & GAIN TRACKER
+local function updateInventoryCountsFromSave()
+    if not Save then return end
+    local saveData = nil
+    pcall(function() saveData = Save.Get() end)
+    
+    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then return end
+
+    local currentGiftBags = 0
+    local currentLargeGiftBags = 0
+    local currentPinatas = 0
+
+    for uid, item in pairs(saveData.Inventory.Misc) do
+        if type(item) == "table" and item.id then
+            local idLower = tostring(item.id):lower()
+            local amount = tonumber(item._am) or 1
+
+            if idLower == "large gift bag" or idLower == "giant gift bag" then
+                currentLargeGiftBags = currentLargeGiftBags + amount
+            elseif idLower == "gift bag" then
+                currentGiftBags = currentGiftBags + amount
+            elseif idLower == "mini pinata" then
+                currentPinatas = currentPinatas + amount
+            end
+        end
+    end
+
+    -- Update Live Display Variables
+    currentPinataCount = currentPinatas
+    currentGiftBagCount = currentGiftBags
+    currentLargeGiftBagCount = currentLargeGiftBags
+
+    if not hasInitializedBagBaseline then
+        initialGiftBags = currentGiftBags
+        initialLargeGiftBags = currentLargeGiftBags
+        hasInitializedBagBaseline = true
+    else
+        if currentGiftBags >= initialGiftBags then
+            giftBagsGained = currentGiftBags - initialGiftBags
+        end
+        if currentLargeGiftBags >= initialLargeGiftBags then
+            largeGiftBagsGained = currentLargeGiftBags - initialLargeGiftBags
+        end
+    end
+end
+
+-- Poll Inventory every 3 seconds to ensure gain and current amount accuracy
+task.spawn(function()
+    while task.wait(3) do
+        updateInventoryCountsFromSave()
+    end
+end)
 
 local function isPinataActive()
     if not Breakables then return false end
@@ -183,7 +246,7 @@ pcall(function()
     Lighting.FogEnd = 9e9
 end)
 
--- Memory Cleaner (Prevents executor memory leak slowdowns over long sessions)
+-- Memory Cleaner
 task.spawn(function()
     while task.wait(180) do
         pcall(function() gcinfo() end)
@@ -204,12 +267,12 @@ bg.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
 bg.BorderSizePixel = 0
 
 local txt = Instance.new("TextLabel", bg)
-txt.Size = UDim2.new(1, 0, 0.65, 0)
-txt.Position = UDim2.new(0, 0, 0.1, 0)
+txt.Size = UDim2.new(1, 0, 0.7, 0)
+txt.Position = UDim2.new(0, 0, 0.05, 0)
 txt.BackgroundTransparency = 1
 txt.TextColor3 = Color3.fromRGB(0, 255, 120)
 txt.Font = Enum.Font.Code
-txt.TextSize = 15
+txt.TextSize = 14
 txt.Text = "Starting Session Tracker..."
 
 local btn = Instance.new("TextButton", bg)
@@ -247,7 +310,7 @@ miniBtn.MouseButton1Click:Connect(function()
     miniBtn.Visible = false
 end)
 
--- Item Processing
+-- Event-based fallback processing
 local function processItemName(itemName, amount)
     if not itemName then return end
     local str = tostring(itemName):lower()
@@ -296,7 +359,7 @@ task.spawn(function()
     end
 end)
 
--- Non-Yielding Stats Update
+-- Non-Yielding Stats Update (Displays Both Current Inventory Counts and Session Gains)
 task.spawn(function()
     while task.wait(1) do
         if sf and sf.Parent then
@@ -310,18 +373,15 @@ task.spawn(function()
             local currentIdle = math.floor(tick() - lastInput)
 
             txt.Text = string.format(
-                "=== ARCEUS X SESSION TRACKER ===\n" ..
+                "=== DELTA SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
-                "Mini Piñatas Spawned: %d\n" ..
-                "└ Rate: %.1f/min\n\n" ..
-                "Gift Bags Gained: +%d\n" ..
-                "└ Rate: %.1f/min\n\n" ..
-                "Large Gift Bags Gained: +%d\n" ..
-                "└ Rate: %.1f/min",
+                "Mini Piñatas: %d In Inv  |  %d Spawned (%.1f/min)\n\n" ..
+                "Gift Bags: %d In Inv  |  +%d Gained (%.1f/min)\n\n" ..
+                "Large Gift Bags: %d In Inv  |  +%d Gained (%.1f/min)",
                 h, m, s, currentIdle,
-                pinatasSpawned, pRate, 
-                giftBagsGained, gRate,
-                largeGiftBagsGained, lRate
+                currentPinataCount, pinatasSpawned, pRate, 
+                currentGiftBagCount, giftBagsGained, gRate,
+                currentLargeGiftBagCount, largeGiftBagsGained, lRate
             )
         end
     end
