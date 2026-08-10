@@ -1,8 +1,10 @@
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local HttpService = game:GetService("HttpService")
+if not game:IsLoaded() then game.Loaded:Wait() end
 local Players = game:GetService("Players")
 local LocalPlayer = Players.LocalPlayer
-local Network = ReplicatedStorage:WaitForChild("Network")
+repeat task.wait(1) until LocalPlayer and LocalPlayer.Character
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
 
 -- Configuration
 getgenv().config = {
@@ -11,10 +13,23 @@ getgenv().config = {
     autoClaimMail = true,
     autoSendMail = true,
     
-    -- Specific thresholds
     largeGiftThreshold = 20000,  -- Send Large Gift Bags if count >= 20,000
     giftBagThreshold = 200000    -- Send Gift Bags if count >= 200,000
 }
+
+-- Safe Module Loading
+local Library = ReplicatedStorage:WaitForChild("Library", 15)
+local Client = Library and Library:WaitForChild("Client", 15)
+local Network, Save
+
+for i = 1, 10 do
+    pcall(function()
+        Network = require(Client:WaitForChild("Network", 5))
+        Save = require(Client:WaitForChild("Save", 5))
+    end)
+    if Network and Save then break end
+    task.wait(1)
+end
 
 ----------------------------------------------------------------
 -- HELPER FUNCTIONS
@@ -22,21 +37,24 @@ getgenv().config = {
 
 local function getDiamondsLeft()
     local diamonds = 0
-    pcall(function()
-        local saveModule = require(ReplicatedStorage.Library.Client.Save)
-        local result = saveModule.Get()
-        for _, v in pairs(result.Inventory.Currency) do
-            if v.id == "Diamonds" then
-                diamonds = v._am or 0
-                break
+    if Save then
+        pcall(function()
+            local result = Save.Get()
+            if result and result.Inventory and result.Inventory.Currency then
+                for _, v in pairs(result.Inventory.Currency) do
+                    if v.id == "Diamonds" then
+                        diamonds = tonumber(v._am) or 0
+                        break
+                    end
+                end
             end
-        end
-    end)
+        end)
+    end
     return diamonds
 end
 
 local function formatNumber(amount)
-    local formatted = tostring(amount)
+    local formatted = tostring(amount or 0)
     while true do  
         local k
         formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
@@ -45,7 +63,6 @@ local function formatNumber(amount)
     return formatted
 end
 
--- Webhook Notifier (Structured identically to your working piñata script)
 local function sendWebhook(itemName, itemCount)
     local url = config.webhookUrl
     if not url or url == "" then return end
@@ -53,22 +70,22 @@ local function sendWebhook(itemName, itemCount)
     local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
     if not httpRequest then return end
 
-    local diamondsLeft = formatNumber(getDiamondsLeft()) or "0"
-    local formattedCount = formatNumber(itemCount) or "0"
+    local diamondsLeft = formatNumber(getDiamondsLeft())
+    local formattedCount = formatNumber(itemCount)
     local accountName = LocalPlayer and LocalPlayer.Name or "Unknown"
 
     local payload = {
         ["content"] = "📦 **Item Mailed Successfully!**",
         ["embeds"] = {{
             ["title"] = "📬 Mail Sent Log",
-            ["color"] = 65280, -- Green
+            ["color"] = 65280,
             ["fields"] = {
                 { ["name"] = "Account", ["value"] = accountName, ["inline"] = true },
                 { ["name"] = "Item Sent", ["value"] = tostring(itemName) .. " (x" .. formattedCount .. ")", ["inline"] = true },
                 { ["name"] = "Recipient", ["value"] = tostring(config.userToMail), ["inline"] = true },
                 { ["name"] = "Diamonds Left", ["value"] = tostring(diamondsLeft), ["inline"] = true }
             ],
-            ["footer"] = { ["text"] = "Ckyñata PS99 Mailer" },
+            ["footer"] = { ["text"] = "Arceus X PS99 Mailer" },
             ["timestamp"] = DateTime.now():ToIsoDate()
         }}
     }
@@ -88,9 +105,9 @@ end
 ----------------------------------------------------------------
 task.spawn(function()
     while task.wait(5) do
-        if config.autoClaimMail then
+        if config.autoClaimMail and Network then
             pcall(function()
-                Network:WaitForChild("Mailbox: Claim All"):InvokeServer()
+                Network.Invoke("Mailbox: Claim All")
             end)
         end
     end
@@ -100,47 +117,55 @@ end)
 -- AUTO SEND MAIL
 ----------------------------------------------------------------
 task.spawn(function()
-    while task.wait(10) do
-        if config.autoSendMail then
-            pcall(function()
-                local saveModule = require(ReplicatedStorage.Library.Client.Save)
-                local result = saveModule.Get()
-                local ms = result.Inventory.Misc 
+    while task.wait(5) do
+        if config.autoSendMail and Network and Save then
+            local saveData
+            pcall(function() saveData = Save.Get() end)
 
-                for itemIndex, itemData in pairs(ms) do
-                    -- Send Large Gift Bag if account has threshold amount
-                    if itemData.id == "Large Gift Bag" and itemData._am >= config.largeGiftThreshold then
-                        local amountToSend = itemData._am
-                        local payload = {
-                            [1] = config.userToMail,
-                            [2] = "",
-                            [3] = "Misc",
-                            [4] = itemIndex,
-                            [5] = amountToSend
-                        }
-                        Network:FindFirstChild("Mailbox: Send"):InvokeServer(unpack(payload))
-                        sendWebhook("Large Gift Bag", amountToSend)
-                        task.wait(0.5)
-                    end
+            if saveData and saveData.Inventory and saveData.Inventory.Misc then
+                for itemIndex, itemData in pairs(saveData.Inventory.Misc) do
+                    if type(itemData) == "table" and itemData.id then
+                        local idLower = tostring(itemData.id):lower()
+                        local amount = tonumber(itemData._am) or 1
 
-                    -- Send Gift Bag if account has threshold amount
-                    if itemData.id == "Gift Bag" and itemData._am >= config.giftBagThreshold then
-                        local amountToSend = itemData._am
-                        local payload = {
-                            [1] = config.userToMail,
-                            [2] = "",
-                            [3] = "Misc",
-                            [4] = itemIndex,
-                            [5] = amountToSend
-                        }
-                        Network:FindFirstChild("Mailbox: Send"):InvokeServer(unpack(payload))
-                        sendWebhook("Gift Bag", amountToSend)
-                        task.wait(0.5)
+                        -- Check Large Gift Bags
+                        if (idLower == "large gift bag" or idLower == "giant gift bag") and amount >= config.largeGiftThreshold then
+                            print(string.format("[Mailer] Attempting to mail Large Gift Bags (x%d)...", amount))
+                            
+                            local success, res = pcall(function()
+                                return Network.Invoke("Mailbox: Send", config.userToMail, "", "Misc", itemIndex, amount)
+                            end)
+
+                            if success then
+                                print("[Mailer] Large Gift Bags sent!")
+                                sendWebhook("Large Gift Bag", amount)
+                                task.wait(3)
+                            else
+                                warn("[Mailer] Failed to send Large Gift Bag: " .. tostring(res))
+                            end
+                        end
+
+                        -- Check Standard Gift Bags
+                        if idLower == "gift bag" and amount >= config.giftBagThreshold then
+                            print(string.format("[Mailer] Attempting to mail Gift Bags (x%d)...", amount))
+                            
+                            local success, res = pcall(function()
+                                return Network.Invoke("Mailbox: Send", config.userToMail, "", "Misc", itemIndex, amount)
+                            end)
+
+                            if success then
+                                print("[Mailer] Gift Bags sent!")
+                                sendWebhook("Gift Bag", amount)
+                                task.wait(3)
+                            else
+                                warn("[Mailer] Failed to send Gift Bag: " .. tostring(res))
+                            end
+                        end
                     end
                 end
-            end)
+            end
         end
     end
 end)
 
-print("[PS99 Utility] Custom Auto Mail Loaded Successfully for " .. config.userToMail)
+print("[PS99 Utility] Mailer loaded. Open developer console (F9) to watch status logs.")
