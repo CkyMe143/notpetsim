@@ -16,8 +16,6 @@ getgenv().config = {
     giftBagThreshold = 200000    -- Send Gift Bags if count >= 200,000
 }
 
-local config = getgenv().config
-
 ----------------------------------------------------------------
 -- HELPER FUNCTIONS
 ----------------------------------------------------------------
@@ -41,8 +39,8 @@ end
 -- Format numbers with commas (e.g. 200004 -> 200,004)
 local function formatNumber(amount)
     local formatted = tostring(amount)
+    local k
     while true do  
-        local k
         formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
         if k == 0 then break end
     end
@@ -51,7 +49,7 @@ end
 
 -- Send Discord Webhook matching your embed layout
 local function sendWebhook(itemName, itemCount)
-    if not config.webhookUrl or config.webhookUrl == "" or config.webhookUrl == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
+    if config.webhookUrl == "" or config.webhookUrl == "YOUR_DISCORD_WEBHOOK_URL_HERE" then return end
 
     local diamondsLeft = formatNumber(getDiamondsLeft())
     local formattedCount = formatNumber(itemCount)
@@ -91,9 +89,9 @@ local function sendWebhook(itemName, itemCount)
     local jsonData = HttpService:JSONEncode(embedData)
 
     pcall(function()
-        local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request or httprequest
-        if requestFunc then
-            requestFunc({
+        local request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+        if request then
+            request({
                 Url = config.webhookUrl,
                 Method = "POST",
                 Headers = {["Content-Type"] = "application/json"},
@@ -129,7 +127,7 @@ task.spawn(function()
 
                 for itemIndex, itemData in pairs(ms) do
                     -- Send Large Gift Bag if account has 20,000+
-                    if itemData.id == "Large Gift Bag" and itemData._am and itemData._am >= config.largeGiftThreshold then
+                    if itemData.id == "Large Gift Bag" and itemData._am >= config.largeGiftThreshold then
                         local amountToSend = itemData._am
                         local payload = {
                             [1] = config.userToMail,
@@ -145,7 +143,7 @@ task.spawn(function()
                     end
 
                     -- Send Gift Bag if account has 200,000+
-                    if itemData.id == "Gift Bag" and itemData._am and itemData._am >= config.giftBagThreshold then
+                    if itemData.id == "Gift Bag" and itemData._am >= config.giftBagThreshold then
                         local amountToSend = itemData._am
                         local payload = {
                             [1] = config.userToMail,
