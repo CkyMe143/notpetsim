@@ -45,53 +45,41 @@ local function formatNumber(amount)
     return formatted
 end
 
+-- Webhook Notifier (Structured identically to your working piñata script)
 local function sendWebhook(itemName, itemCount)
-    if not config.webhookUrl or config.webhookUrl == "" then return end
+    local url = config.webhookUrl
+    if not url or url == "" then return end
 
-    local diamondsLeft = formatNumber(getDiamondsLeft())
-    local formattedCount = formatNumber(itemCount)
+    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+    if not httpRequest then return end
 
-    local embedData = {
-        ["username"] = "Spidey Bot",
-        ["embeds"] = {
-            {
-                ["title"] = "📬 You have mailed an item!",
-                ["color"] = 15258703,
-                ["fields"] = {
-                    {
-                        ["name"] = "📦 Mailed Item Info:",
-                        ["value"] = "Item: `" .. itemName .. " (x" .. formattedCount .. ")`\nSent to: `" .. config.userToMail .. "`",
-                        ["inline"] = false
-                    },
-                    {
-                        ["name"] = "👨‍💼 User Info:",
-                        ["value"] = "In Account: `" .. LocalPlayer.Name .. "`\nDiamonds Left: `" .. diamondsLeft .. "`",
-                        ["inline"] = false
-                    }
-                ],
-                ["footer"] = {
-                    ["text"] = "Mailer (iHH AutoMail)"
-                }
-            }
-        }
+    local diamondsLeft = formatNumber(getDiamondsLeft()) or "0"
+    local formattedCount = formatNumber(itemCount) or "0"
+    local accountName = LocalPlayer and LocalPlayer.Name or "Unknown"
+
+    local payload = {
+        ["content"] = "📦 **Item Mailed Successfully!**",
+        ["embeds"] = {{
+            ["title"] = "📬 Mail Sent Log",
+            ["color"] = 65280, -- Green
+            ["fields"] = {
+                { ["name"] = "Account", ["value"] = accountName, ["inline"] = true },
+                { ["name"] = "Item Sent", ["value"] = tostring(itemName) .. " (x" .. formattedCount .. ")", ["inline"] = true },
+                { ["name"] = "Recipient", ["value"] = tostring(config.userToMail), ["inline"] = true },
+                { ["name"] = "Diamonds Left", ["value"] = tostring(diamondsLeft), ["inline"] = true }
+            ],
+            ["footer"] = { ["text"] = "Ckyñata PS99 Mailer" },
+            ["timestamp"] = DateTime.now():ToIsoDate()
+        }}
     }
 
-    if itemName == "Large Gift Bag" then
-        embedData.embeds[1]["thumbnail"] = { ["url"] = "https://tr.rbxcdn.com/180ed7e834bd780829d5a9d80d2ceb58/150/150/Image/Png" }
-    elseif itemName == "Gift Bag" then
-        embedData.embeds[1]["thumbnail"] = { ["url"] = "https://tr.rbxcdn.com/2b39920ef1351d3caae9823cebf0d8c2/150/150/Image/Png" }
-    end
-
     pcall(function()
-        local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-        if requestFunc then
-            requestFunc({
-                Url = config.webhookUrl,
-                Method = "POST",
-                Headers = {["Content-Type"] = "application/json"},
-                Body = HttpService:JSONEncode(embedData)
-            })
-        end
+        httpRequest({
+            Url = url,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = HttpService:JSONEncode(payload)
+        })
     end)
 end
 
@@ -120,7 +108,7 @@ task.spawn(function()
                 local ms = result.Inventory.Misc 
 
                 for itemIndex, itemData in pairs(ms) do
-                    -- Send Large Gift Bag if account has 20,000+
+                    -- Send Large Gift Bag if account has threshold amount
                     if itemData.id == "Large Gift Bag" and itemData._am >= config.largeGiftThreshold then
                         local amountToSend = itemData._am
                         local payload = {
@@ -135,7 +123,7 @@ task.spawn(function()
                         task.wait(0.5)
                     end
 
-                    -- Send Gift Bag if account has 200,000+
+                    -- Send Gift Bag if account has threshold amount
                     if itemData.id == "Gift Bag" and itemData._am >= config.giftBagThreshold then
                         local amountToSend = itemData._am
                         local payload = {
