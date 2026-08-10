@@ -1,34 +1,99 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local LocalPlayer = Players.LocalPlayer
 local Network = ReplicatedStorage:WaitForChild("Network")
 
 -- Configuration
 getgenv().config = {
     userToMail = "Ps99_dias",
-    autoFruit = true,
+    webhookUrl = "https://discord.com/api/webhooks/1510138512807301302/rZtNxe2qHglLbcWZfuHKvP7fUR53TSFs-Cq6-NJO7qT-SXoim3Gn15LssQ82CMfVzC38",
     autoClaimMail = true,
     autoSendMail = true,
     
-    -- Specific thresholds requested
+    -- Specific thresholds
     largeGiftThreshold = 20000,  -- Send Large Gift Bags if count >= 20,000
     giftBagThreshold = 200000    -- Send Gift Bags if count >= 200,000
 }
 
 ----------------------------------------------------------------
--- AUTO FRUIT (Pineapple and Rainbow Fruit ONLY)
+-- HELPER FUNCTIONS
 ----------------------------------------------------------------
-task.spawn(function()
-    local targetFruits = {"Pineapple", "Rainbow Fruit"}
-    while task.wait(1) do
-        if config.autoFruit then
-            for _, fruitName in ipairs(targetFruits) do
-                pcall(function()
-                    Network:WaitForChild("Fruits: Consume"):InvokeServer(fruitName, 1)
-                end)
-                task.wait(0.1)
+
+local function getDiamondsLeft()
+    local diamonds = 0
+    pcall(function()
+        local saveModule = require(ReplicatedStorage.Library.Client.Save)
+        local result = saveModule.Get()
+        for _, v in pairs(result.Inventory.Currency) do
+            if v.id == "Diamonds" then
+                diamonds = v._am or 0
+                break
             end
         end
+    end)
+    return diamonds
+end
+
+local function formatNumber(amount)
+    local formatted = tostring(amount)
+    while true do  
+        local k
+        formatted, k = string.gsub(formatted, "^(-?%d+)(%d%d%d)", '%1,%2')
+        if k == 0 then break end
     end
-end)
+    return formatted
+end
+
+local function sendWebhook(itemName, itemCount)
+    if not config.webhookUrl or config.webhookUrl == "" then return end
+
+    local diamondsLeft = formatNumber(getDiamondsLeft())
+    local formattedCount = formatNumber(itemCount)
+
+    local embedData = {
+        ["username"] = "Spidey Bot",
+        ["embeds"] = {
+            {
+                ["title"] = "📬 You have mailed an item!",
+                ["color"] = 15258703,
+                ["fields"] = {
+                    {
+                        ["name"] = "📦 Mailed Item Info:",
+                        ["value"] = "Item: `" .. itemName .. " (x" .. formattedCount .. ")`\nSent to: `" .. config.userToMail .. "`",
+                        ["inline"] = false
+                    },
+                    {
+                        ["name"] = "👨‍💼 User Info:",
+                        ["value"] = "In Account: `" .. LocalPlayer.Name .. "`\nDiamonds Left: `" .. diamondsLeft .. "`",
+                        ["inline"] = false
+                    }
+                ],
+                ["footer"] = {
+                    ["text"] = "Mailer (iHH AutoMail)"
+                }
+            }
+        }
+    }
+
+    if itemName == "Large Gift Bag" then
+        embedData.embeds[1]["thumbnail"] = { ["url"] = "https://tr.rbxcdn.com/180ed7e834bd780829d5a9d80d2ceb58/150/150/Image/Png" }
+    elseif itemName == "Gift Bag" then
+        embedData.embeds[1]["thumbnail"] = { ["url"] = "https://tr.rbxcdn.com/2b39920ef1351d3caae9823cebf0d8c2/150/150/Image/Png" }
+    end
+
+    pcall(function()
+        local requestFunc = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
+        if requestFunc then
+            requestFunc({
+                Url = config.webhookUrl,
+                Method = "POST",
+                Headers = {["Content-Type"] = "application/json"},
+                Body = HttpService:JSONEncode(embedData)
+            })
+        end
+    end)
+end
 
 ----------------------------------------------------------------
 -- AUTO CLAIM MAIL
@@ -57,27 +122,31 @@ task.spawn(function()
                 for itemIndex, itemData in pairs(ms) do
                     -- Send Large Gift Bag if account has 20,000+
                     if itemData.id == "Large Gift Bag" and itemData._am >= config.largeGiftThreshold then
+                        local amountToSend = itemData._am
                         local payload = {
                             [1] = config.userToMail,
                             [2] = "",
                             [3] = "Misc",
                             [4] = itemIndex,
-                            [5] = itemData._am
+                            [5] = amountToSend
                         }
                         Network:FindFirstChild("Mailbox: Send"):InvokeServer(unpack(payload))
+                        sendWebhook("Large Gift Bag", amountToSend)
                         task.wait(0.5)
                     end
 
                     -- Send Gift Bag if account has 200,000+
                     if itemData.id == "Gift Bag" and itemData._am >= config.giftBagThreshold then
+                        local amountToSend = itemData._am
                         local payload = {
                             [1] = config.userToMail,
                             [2] = "",
                             [3] = "Misc",
                             [4] = itemIndex,
-                            [5] = itemData._am
+                            [5] = amountToSend
                         }
                         Network:FindFirstChild("Mailbox: Send"):InvokeServer(unpack(payload))
+                        sendWebhook("Gift Bag", amountToSend)
                         task.wait(0.5)
                     end
                 end
@@ -86,4 +155,4 @@ task.spawn(function()
     end
 end)
 
-print("[PS99 Utility] Auto Fruit & Custom Auto Mail Loaded Successfully for " .. config.userToMail)
+print("[PS99 Utility] Custom Auto Mail Loaded Successfully for " .. config.userToMail)
