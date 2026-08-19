@@ -81,15 +81,15 @@ Workspace.DescendantAdded:Connect(function(v)
     optimizeObject(v)
 end)
 
--- 5. LOW CPU: Cap Frame Rate for Farming
+-- 5. LOW CPU: Initial FPS Capping
 if setfpscap then
-    setfpscap(15) -- Adjust between 10-30 depending on your farming needs
+    setfpscap(10) -- Starts low for maximum efficiency
 end
 
 print("[Optimization] Low Map + Low CPU combined script loaded successfully!")
 
 -- ====================================================================
--- SECTION 2: PIÑATA FARMER, TRACKER & AUTO MAIL (pinata_98.lua + Mailer)
+-- SECTION 2: PIÑATA FARMER, TRACKER, AUTO MAIL, FLAG & FRUIT CONSUME
 -- ====================================================================
 
 -- Wait until game & local player are completely loaded
@@ -110,6 +110,9 @@ getgenv().Config = {
     ['DiscordUserId'] = "1256971111300726845",        -- Discord User ID for @mention
     ['GoogleSheetUrl'] = "https://script.google.com/macros/s/AKfycbzD55fBc3Ia1F8rv3oQPtkIBrykrNNBr7OIW3lrGq0oXMZ59CwCj2HUCDtko-A6v7R6Vw/exec", -- Google Sheet Web App URL
     
+    -- Auto Flag Configuration
+    ['TargetFlag'] = "Fortune Flag",   -- Options: "Fortune Flag", "Hasty Flag", "Magnet Flag", etc.
+    
     -- Mailer Configuration
     ['userToMail'] = "Ps99_dias",
     ['autoClaimMail'] = true,
@@ -125,6 +128,7 @@ local CoreGui = game:GetService("CoreGui")
 local SoundService = game:GetService("SoundService")
 local UIS = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
+local ContentProvider = game:GetService("ContentProvider")
 
 local CG = CoreGui or LocalPlayer:WaitForChild("PlayerGui")
 local Library = ReplicatedStorage:WaitForChild("Library", 15)
@@ -147,6 +151,34 @@ for i = 1, 10 do
 end
 
 local Breakables = workspace:WaitForChild("__THINGS", 10) and workspace.__THINGS:WaitForChild("Breakables", 10)
+
+----------------------------------------------------------------
+-- OPTIMIZATION #4: GLOBAL CENTRAL SAVE FILE CACHE
+----------------------------------------------------------------
+local cachedSaveData = nil
+task.spawn(function()
+    while true do
+        if Save then
+            pcall(function()
+                cachedSaveData = Save.Get()
+            end)
+        end
+        task.wait(1) -- Refresh cache once per second to reduce CPU calls
+    end
+end)
+
+----------------------------------------------------------------
+-- OPTIMIZATION #5: WEBHOOK RATE-LIMIT PROTECTION
+----------------------------------------------------------------
+local webhookCooldowns = {}
+local function canSendWebhook(key, cooldownSeconds)
+    local lastSent = webhookCooldowns[key] or 0
+    if (os.time() - lastSent) >= cooldownSeconds then
+        webhookCooldowns[key] = os.time()
+        return true
+    end
+    return false
+end
 
 -- TRACKING COUNTERS
 local st = os.time()
@@ -184,18 +216,14 @@ UIS.InputChanged:Connect(function(input, gameProcessed)
     if not gameProcessed then resetIdleTimer() end
 end)
 
--- Safe Inventory Finder (Mini Piñata ONLY)
+-- Safe Inventory Finder (Mini Piñata ONLY) - Uses Cache
 local cachedPinataUid = nil
 local function getPinataUID()
-    if not Save then return cachedPinataUid end
-    local saveData = nil
-    pcall(function() saveData = Save.Get() end)
-
-    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then 
+    if not cachedSaveData or not cachedSaveData.Inventory or not cachedSaveData.Inventory.Misc then 
         return cachedPinataUid 
     end
     
-    local Misc = saveData.Inventory.Misc
+    local Misc = cachedSaveData.Inventory.Misc
     if cachedPinataUid and Misc[cachedPinataUid] and Misc[cachedPinataUid].id == "Mini Pinata" then
         return cachedPinataUid
     end
@@ -237,15 +265,17 @@ end
 
 -- Google Sheets Auto Sync (Fires immediately, then every 3 minutes)
 task.spawn(function()
-    task.wait(5) -- Short delay for initial save file reading
+    task.wait(5)
     while true do
         sendToGoogleSheets()
-        task.wait(180) -- Repeat sync every 3 minutes
+        task.wait(180)
     end
 end)
 
--- Webhook Notifier for Depleted Piñatas
+-- Webhook Notifier for Depleted Piñatas (Protected against rate limits)
 local function sendDiscordWebhook()
+    if not canSendWebhook("depleted_alert", 300) then return end -- 5 Min Cooldown
+
     local isTargetUser = false
     for _, username in ipairs(Config.TargetUsers) do
         if LocalPlayer.Name:lower() == tostring(username):lower() then
@@ -291,8 +321,10 @@ local function sendDiscordWebhook()
     end)
 end
 
--- Webhook Notifier for Unused/Stuck Piñatas
+-- Webhook Notifier for Unused/Stuck Piñatas (Protected against rate limits)
 local function sendStuckPinataWebhook()
+    if not canSendWebhook("stuck_alert", 300) then return end -- 5 Min Cooldown
+
     local isTargetUser = false
     for _, username in ipairs(Config.TargetUsers) do
         if LocalPlayer.Name:lower() == tostring(username):lower() then
@@ -337,19 +369,15 @@ local function sendStuckPinataWebhook()
     end)
 end
 
--- ACCURATE INVENTORY COUNTER, GAIN TRACKER & 5-MIN STUCK CHECKER
+-- ACCURATE INVENTORY COUNTER - Uses Cache
 local function updateInventoryCountsFromSave()
-    if not Save then return end
-    local saveData = nil
-    pcall(function() saveData = Save.Get() end)
-    
-    if type(saveData) ~= "table" or not saveData.Inventory or not saveData.Inventory.Misc then return end
+    if not cachedSaveData or type(cachedSaveData) ~= "table" or not cachedSaveData.Inventory or not cachedSaveData.Inventory.Misc then return end
 
     local currentGiftBags = 0
     local currentLargeGiftBags = 0
     local currentPinatas = 0
 
-    for uid, item in pairs(saveData.Inventory.Misc) do
+    for uid, item in pairs(cachedSaveData.Inventory.Misc) do
         if type(item) == "table" and item.id then
             local idLower = tostring(item.id):lower()
             local amount = tonumber(item._am) or 1
@@ -409,6 +437,82 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------
+-- AUTO CONSUME RAINBOW FRUIT & PINEAPPLE ONLY - Uses Cache
+----------------------------------------------------------------
+task.spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            if cachedSaveData and cachedSaveData.Inventory and cachedSaveData.Inventory.Fruit then
+                for fruitUID, itemData in pairs(cachedSaveData.Inventory.Fruit) do
+                    if type(itemData) == "table" and itemData.id then
+                        local fruitName = itemData.id
+                        
+                        if fruitName == "Pineapple" or fruitName == "Rainbow" then
+                            local amount = tonumber(itemData._am) or 1
+                            
+                            local Event = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("Fruits: Consume")
+                            if Event then
+                                Event:FireServer(fruitUID, amount)
+                            end
+                            
+                            task.wait(1)
+                        end
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+----------------------------------------------------------------
+-- AUTO PLACE FLAG - Uses Cache
+----------------------------------------------------------------
+task.spawn(function()
+    local function isFlagInMyArea()
+        local things = workspace:FindFirstChild("__THINGS")
+        if not things or not things:FindFirstChild("Flags") then return false end
+
+        local character = LocalPlayer.Character
+        if not character or not character:FindFirstChild("HumanoidRootPart") then return false end
+
+        local playerPos = character.HumanoidRootPart.Position
+
+        for _, flag in pairs(things.Flags:GetChildren()) do
+            if flag:IsA("Model") and flag.PrimaryPart then
+                local distance = (flag.PrimaryPart.Position - playerPos).Magnitude
+                if distance < 150 then
+                    return true
+                end
+            end
+        end
+        return false
+    end
+
+    while task.wait(5) do
+        pcall(function()
+            if not isFlagInMyArea() then
+                if not cachedSaveData or not cachedSaveData.Inventory then return end
+
+                local inv = cachedSaveData.Inventory
+                local flagTable = inv.Misc or inv.Consumables or inv.Flag or {}
+
+                for uid, item in pairs(flagTable) do
+                    if type(item) == "table" and item.id == Config.TargetFlag then
+                        local Event = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("FlexibleFlags_Consume")
+                        if Event then
+                            Event:InvokeServer(Config.TargetFlag, uid, nil)
+                        end
+
+                        task.wait(2)
+                        break
+                    end
+                end
+            end
+        end)
+    end
+end)
+
+----------------------------------------------------------------
 -- AUTO CLAIM MAIL
 ----------------------------------------------------------------
 task.spawn(function()
@@ -422,40 +526,26 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------
--- AUTO SEND MAIL
+-- AUTO SEND MAIL - Uses Cache
 ----------------------------------------------------------------
 task.spawn(function()
     while task.wait(10) do
-        if Config.autoSendMail and Save and Network then
+        if Config.autoSendMail and cachedSaveData and Network then
             pcall(function()
-                local saveData = Save.Get()
-                if not saveData or not saveData.Inventory or not saveData.Inventory.Misc then return end
-                local ms = saveData.Inventory.Misc 
+                if not cachedSaveData.Inventory or not cachedSaveData.Inventory.Misc then return end
+                local ms = cachedSaveData.Inventory.Misc 
 
                 for itemIndex, itemData in pairs(ms) do
                     local amt = tonumber(itemData._am) or 1
-                    -- Send Large Gift Bag if account has threshold+
+                    
                     if itemData.id == "Large Gift Bag" and amt >= Config.largeGiftThreshold then
-                        local payload = {
-                            Config.userToMail,
-                            "",
-                            "Misc",
-                            itemIndex,
-                            amt
-                        }
+                        local payload = { Config.userToMail, "", "Misc", itemIndex, amt }
                         Network.Invoke("Mailbox: Send", unpack(payload))
                         task.wait(0.5)
                     end
 
-                    -- Send Gift Bag if account has threshold+
                     if itemData.id == "Gift Bag" and amt >= Config.giftBagThreshold then
-                        local payload = {
-                            Config.userToMail,
-                            "",
-                            "Misc",
-                            itemIndex,
-                            amt
-                        }
+                        local payload = { Config.userToMail, "", "Misc", itemIndex, amt }
                         Network.Invoke("Mailbox: Send", unpack(payload))
                         task.wait(0.5)
                     end
@@ -499,9 +589,16 @@ pcall(function()
     SoundService.Volume = 0
 end)
 
+----------------------------------------------------------------
+-- OPTIMIZATION #1: DEEP GARBAGE COLLECTION & ASSET UNLOADING
+----------------------------------------------------------------
 task.spawn(function()
     while task.wait(180) do
-        pcall(function() gcinfo() end)
+        pcall(function() 
+            gcinfo() 
+            collectgarbage("collect")
+            ContentProvider:UnloadUnusedAssets()
+        end)
     end
 end)
 
@@ -552,14 +649,19 @@ miniBtn.Text = "[ Hide Game ]"
 miniBtn.Visible = false
 Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 6)
 
+----------------------------------------------------------------
+-- OPTIMIZATION #2: DYNAMIC FPS SWITCHER ON UI BUTTONS
+----------------------------------------------------------------
 btn.MouseButton1Click:Connect(function()
     bg.Visible = false
     miniBtn.Visible = true
+    if setfpscap then setfpscap(30) end -- Smooth viewing FPS
 end)
 
 miniBtn.MouseButton1Click:Connect(function()
     bg.Visible = true
     miniBtn.Visible = false
+    if setfpscap then setfpscap(8) end -- Ultra-low FPS when screen is covered (Saves battery & keeps phone cold)
 end)
 
 local function processItemName(itemName, amount)
@@ -624,7 +726,7 @@ task.spawn(function()
             local currentIdle = math.floor(tick() - lastInput)
 
             txt.Text = string.format(
-                "=== ARCEUS X SESSION TRACKER ===\n" ..
+                "=== DELTA SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas:\n" ..
                 "├ In Inv: %d\n" ..
