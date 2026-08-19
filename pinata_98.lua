@@ -89,7 +89,7 @@ end
 print("[Optimization] Low Map + Low CPU combined script loaded successfully!")
 
 -- ====================================================================
--- SECTION 2: PIÑATA FARMER, TRACKER, AUTO MAIL, FLAG & FRUIT CONSUME
+-- SECTION 2: PIÑATA FARMER, TRACKER, AUTO MAIL, FLAG, FRUIT & GIFTS
 -- ====================================================================
 
 -- Wait until game & local player are completely loaded
@@ -101,13 +101,6 @@ repeat task.wait(1) until LocalPlayer and LocalPlayer.Character and LocalPlayer.
 -- MERGED CONFIGURATION
 getgenv().Config = {
     ['AreaName'] = "98 | Colorful Clouds", -- Strictly Area 98
-    ['EnableFollow'] = true,            -- Follow target ONLY when truly out of piñatas
-    ['TargetUsers'] = {                -- Main accounts that spawn piñatas (ONLY THESE WILL PING)
-        "GabbyPoge127",
-        "dfly10109"
-    },
-    ['WebhookUrl'] = "https://discord.com/api/webhooks/1513462456310304869/kKbBqqTA_GQBJBer5hJfhRphy_g1XLJEwLZrDp2WLNE2eCaecG_yQ4mgCG66lDzJ8-V8",
-    ['DiscordUserId'] = "1256971111300726845",        -- Discord User ID for @mention
     ['GoogleSheetUrl'] = "https://script.google.com/macros/s/AKfycbzD55fBc3Ia1F8rv3oQPtkIBrykrNNBr7OIW3lrGq0oXMZ59CwCj2HUCDtko-A6v7R6Vw/exec", -- Google Sheet Web App URL
     
     -- Auto Flag Configuration
@@ -153,7 +146,7 @@ end
 local Breakables = workspace:WaitForChild("__THINGS", 10) and workspace.__THINGS:WaitForChild("Breakables", 10)
 
 ----------------------------------------------------------------
--- OPTIMIZATION #4: GLOBAL CENTRAL SAVE FILE CACHE
+-- GLOBAL CENTRAL SAVE FILE CACHE
 ----------------------------------------------------------------
 local cachedSaveData = nil
 task.spawn(function()
@@ -167,32 +160,16 @@ task.spawn(function()
     end
 end)
 
-----------------------------------------------------------------
--- OPTIMIZATION #5: WEBHOOK RATE-LIMIT PROTECTION
-----------------------------------------------------------------
-local webhookCooldowns = {}
-local function canSendWebhook(key, cooldownSeconds)
-    local lastSent = webhookCooldowns[key] or 0
-    if (os.time() - lastSent) >= cooldownSeconds then
-        webhookCooldowns[key] = os.time()
-        return true
-    end
-    return false
-end
-
 -- TRACKING COUNTERS
 local st = os.time()
-local scriptStartTime = os.time()
 local pinatasSpawned = 0
 local giftBagsGained = 0
 local largeGiftBagsGained = 0
 local lastInput = tick()
-local hasAlertedDepleted = false 
 
 -- STUCK / IDLE INVENTORY DETECTOR TRACKERS
 local lastPinataCount = -1
 local pinataCountLastChangedTime = os.time()
-local hasAlertedStuckPinata = false
 
 -- LIVE INVENTORY COUNTS
 local currentPinataCount = 0
@@ -272,103 +249,6 @@ task.spawn(function()
     end
 end)
 
--- Webhook Notifier for Depleted Piñatas (Protected against rate limits)
-local function sendDiscordWebhook()
-    if not canSendWebhook("depleted_alert", 300) then return end -- 5 Min Cooldown
-
-    local isTargetUser = false
-    for _, username in ipairs(Config.TargetUsers) do
-        if LocalPlayer.Name:lower() == tostring(username):lower() then
-            isTargetUser = true
-            break
-        end
-    end
-
-    if not isTargetUser then return end
-    if (os.time() - scriptStartTime) < 15 and pinatasSpawned == 0 then return end
-
-    local url = Config.WebhookUrl
-    if not url or url == "" then return end
-
-    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    if not httpRequest then return end
-
-    local userPing = Config.DiscordUserId ~= "" and ("<@" .. Config.DiscordUserId .. "> ") or ""
-
-    local payload = {
-        ["content"] = userPing .. "⚠️ **Mini Piñatas Depleted!**",
-        ["embeds"] = {{
-            ["title"] = "🪅 Account Out of Piñatas!",
-            ["color"] = 16711680,
-            ["fields"] = {
-                { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
-                { ["name"] = "Piñatas Spawned", ["value"] = tostring(pinatasSpawned), ["inline"] = true },
-                { ["name"] = "Gift Bags", ["value"] = "+" .. tostring(giftBagsGained), ["inline"] = true },
-                { ["name"] = "Large Gift Bags", ["value"] = "+" .. tostring(largeGiftBagsGained), ["inline"] = true }
-            },
-            ["footer"] = { ["text"] = "Arceus X PS99 Tracker" },
-            ["timestamp"] = DateTime.now():ToIsoDate()
-        }}
-    }
-
-    pcall(function()
-        httpRequest({
-            Url = url,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
-end
-
--- Webhook Notifier for Unused/Stuck Piñatas (Protected against rate limits)
-local function sendStuckPinataWebhook()
-    if not canSendWebhook("stuck_alert", 300) then return end -- 5 Min Cooldown
-
-    local isTargetUser = false
-    for _, username in ipairs(Config.TargetUsers) do
-        if LocalPlayer.Name:lower() == tostring(username):lower() then
-            isTargetUser = true
-            break
-        end
-    end
-
-    if not isTargetUser then return end
-
-    local url = Config.WebhookUrl
-    if not url or url == "" then return end
-
-    local httpRequest = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
-    if not httpRequest then return end
-
-    local userPing = Config.DiscordUserId ~= "" and ("<@" .. Config.DiscordUserId .. "> ") or ""
-
-    local payload = {
-        ["content"] = userPing .. "🚨 **Warning: Piñata Usage Frozen!**",
-        ["embeds"] = {{
-            ["title"] = "⚠️ Account Has Unused Piñatas!",
-            ["color"] = 16753920,
-            ["description"] = "Mini Piñata count in inventory has not changed for 5 minutes despite having stock remaining.",
-            ["fields"] = {
-                { ["name"] = "Account", ["value"] = LocalPlayer.Name, ["inline"] = true },
-                { ["name"] = "Remaining Piñatas", ["value"] = tostring(currentPinataCount), ["inline"] = true },
-                { ["name"] = "Idle Duration", ["value"] = "5 Minutes", ["inline"] = true }
-            },
-            ["footer"] = { ["text"] = "Arceus X PS99 Tracker" },
-            ["timestamp"] = DateTime.now():ToIsoDate()
-        }}
-    }
-
-    pcall(function()
-        httpRequest({
-            Url = url,
-            Method = "POST",
-            Headers = { ["Content-Type"] = "application/json" },
-            Body = HttpService:JSONEncode(payload)
-        })
-    end)
-end
-
 -- ACCURATE INVENTORY COUNTER - Uses Cache
 local function updateInventoryCountsFromSave()
     if not cachedSaveData or type(cachedSaveData) ~= "table" or not cachedSaveData.Inventory or not cachedSaveData.Inventory.Misc then return end
@@ -400,19 +280,10 @@ local function updateInventoryCountsFromSave()
         if currentPinatas ~= lastPinataCount then
             lastPinataCount = currentPinatas
             pinataCountLastChangedTime = os.time()
-            hasAlertedStuckPinata = false
-        else
-            if (os.time() - pinataCountLastChangedTime) >= 300 then
-                if not hasAlertedStuckPinata then
-                    hasAlertedStuckPinata = true
-                    sendStuckPinataWebhook()
-                end
-            end
         end
     else
         lastPinataCount = 0
         pinataCountLastChangedTime = os.time()
-        hasAlertedStuckPinata = false
     end
 
     if not hasInitializedBagBaseline then
@@ -433,6 +304,20 @@ end
 task.spawn(function()
     while task.wait(3) do
         updateInventoryCountsFromSave()
+    end
+end)
+
+----------------------------------------------------------------
+-- AUTO CLAIM FREE GIFTS (1 THROUGH 12)
+----------------------------------------------------------------
+task.spawn(function()
+    while task.wait(15) do
+        pcall(function()
+            for giftIndex = 1, 12 do
+                game:GetService("ReplicatedStorage").Network["Redeem Free Gift"]:InvokeServer(giftIndex)
+                task.wait(0.2)
+            end
+        end)
     end
 end)
 
@@ -526,30 +411,60 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------
--- AUTO SEND MAIL - Uses Cache
+-- AUTO SEND MAIL (GIFTS + UNLOCK & MAIL HUGES & TITANICS)
 ----------------------------------------------------------------
 task.spawn(function()
     while task.wait(10) do
         if Config.autoSendMail and cachedSaveData and Network then
             pcall(function()
-                if not cachedSaveData.Inventory or not cachedSaveData.Inventory.Misc then return end
-                local ms = cachedSaveData.Inventory.Misc 
-
-                for itemIndex, itemData in pairs(ms) do
-                    local amt = tonumber(itemData._am) or 1
-                    
-                    if itemData.id == "Large Gift Bag" and amt >= Config.largeGiftThreshold then
-                        local payload = { Config.userToMail, "", "Misc", itemIndex, amt }
-                        Network.Invoke("Mailbox: Send", unpack(payload))
-                        task.wait(0.5)
-                    end
-
-                    if itemData.id == "Gift Bag" and amt >= Config.giftBagThreshold then
-                        local payload = { Config.userToMail, "", "Misc", itemIndex, amt }
-                        Network.Invoke("Mailbox: Send", unpack(payload))
-                        task.wait(0.5)
+                if not cachedSaveData.Inventory then return end
+                
+                -- 1. MAIL GIFT BAGS (MISC INVENTORY)
+                if cachedSaveData.Inventory.Misc then
+                    for itemIndex, itemData in pairs(cachedSaveData.Inventory.Misc) do
+                        local amt = tonumber(itemData._am) or 1
+                        
+                        if itemData.id == "Large Gift Bag" and amt >= Config.largeGiftThreshold then
+                            Network.Invoke("Mailbox: Send", Config.userToMail, "", "Misc", itemIndex, amt)
+                            task.wait(1)
+                        elseif itemData.id == "Gift Bag" and amt >= Config.giftBagThreshold then
+                            Network.Invoke("Mailbox: Send", Config.userToMail, "", "Misc", itemIndex, amt)
+                            task.wait(1)
+                        end
                     end
                 end
+
+                -- 2. FORCE UNLOCK & MAIL HUGES AND TITANICS (PET INVENTORY)
+                if cachedSaveData.Inventory.Pet then
+                    for petUID, petData in pairs(cachedSaveData.Inventory.Pet) do
+                        if type(petData) == "table" and petData.id then
+                            local petName = tostring(petData.id)
+                            
+                            -- Check if pet is a Huge or Titanic
+                            if petName:sub(1, 5) == "Huge " or petName:sub(1, 8) == "Titanic " then
+                                
+                                -- Step A: Force Unlock directly via ReplicatedStorage Network
+                                pcall(function()
+                                    game:GetService("ReplicatedStorage").Network.Locking_SetLocked:InvokeServer(petUID, false)
+                                end)
+                                task.wait(1.5) -- Allow server database to process unlock
+
+                                -- Step B: Mail the pet
+                                local success = false
+                                pcall(function()
+                                    success = Network.Invoke("Mailbox: Send", Config.userToMail, "Auto-Mailed Pet", "Pet", petUID, 1)
+                                end)
+                                
+                                if success then
+                                    print("[Mailbox] Successfully unlocked and sent " .. petName .. " to " .. Config.userToMail)
+                                end
+                                
+                                task.wait(1) -- Rate limit prevention
+                            end
+                        end
+                    end
+                end
+
             end)
         end
     end
@@ -590,7 +505,7 @@ pcall(function()
 end)
 
 ----------------------------------------------------------------
--- OPTIMIZATION #1: DEEP GARBAGE COLLECTION & ASSET UNLOADING
+-- DEEP GARBAGE COLLECTION & ASSET UNLOADING
 ----------------------------------------------------------------
 task.spawn(function()
     while task.wait(180) do
@@ -650,7 +565,7 @@ miniBtn.Visible = false
 Instance.new("UICorner", miniBtn).CornerRadius = UDim.new(0, 6)
 
 ----------------------------------------------------------------
--- OPTIMIZATION #2: DYNAMIC FPS SWITCHER ON UI BUTTONS
+-- DYNAMIC FPS SWITCHER ON UI BUTTONS
 ----------------------------------------------------------------
 btn.MouseButton1Click:Connect(function()
     bg.Visible = false
@@ -661,7 +576,7 @@ end)
 miniBtn.MouseButton1Click:Connect(function()
     bg.Visible = true
     miniBtn.Visible = false
-    if setfpscap then setfpscap(8) end -- Ultra-low FPS when screen is covered (Saves battery & keeps phone cold)
+    if setfpscap then setfpscap(8) end -- Ultra-low FPS when screen is covered
 end)
 
 local function processItemName(itemName, amount)
@@ -726,7 +641,7 @@ task.spawn(function()
             local currentIdle = math.floor(tick() - lastInput)
 
             txt.Text = string.format(
-                "=== DELTA SESSION TRACKER ===\n" ..
+                "=== ARCEUS X SESSION TRACKER ===\n" ..
                 "Uptime: [%02d:%02d:%02d]  |  Idle Time: %ds\n\n" ..
                 "Mini Piñatas:\n" ..
                 "├ In Inv: %d\n" ..
@@ -793,7 +708,7 @@ task.spawn(function()
     end
 end)
 
--- HIGH-SPEED Main Farming / Spawning / Following Loop
+-- HIGH-SPEED Main Farming / Spawning Loop
 local lastSpawnTime = 0
 task.spawn(function()
     while task.wait(0.1) do
@@ -805,49 +720,23 @@ task.spawn(function()
         local activePinataExists = isPinataActive()
         local recentlySpawned = (os.time() - lastSpawnTime) < 2
 
-        -- Priority 1: If we have piñatas or one is actively on screen
-        if pinataUid or activePinataExists or recentlySpawned then
-            hasAlertedDepleted = false
-            
-            local areaCF = getArea99CFrame()
-            if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
-                hrp.CFrame = areaCF
-            end
+        -- Keep player in farm zone
+        local areaCF = getArea99CFrame()
+        if areaCF and (hrp.Position - areaCF.Position).Magnitude > 20 then
+            hrp.CFrame = areaCF
+        end
 
-            if pinataUid and not activePinataExists and Network then
-                local success = false
-                pcall(function()
-                    success = Network.Invoke("MiniPinata_Consume", pinataUid)
-                end)
+        -- Spawn piñata if available
+        if pinataUid and not activePinataExists and Network then
+            local success = false
+            pcall(function()
+                success = Network.Invoke("MiniPinata_Consume", pinataUid)
+            end)
 
-                if success then
-                    pinatasSpawned = pinatasSpawned + 1
-                    lastSpawnTime = os.time()
-                    task.wait(0.2)
-                end
-            end
-        -- Priority 2: Completely out of Piñatas
-        else
-            if not hasAlertedDepleted then
-                hasAlertedDepleted = true
-                sendDiscordWebhook()
-            end
-
-            if Config.EnableFollow then
-                pcall(function()
-                    local targetPlayer = nil
-                    for _, username in ipairs(Config.TargetUsers) do
-                        local p = Players:FindFirstChild(username)
-                        if p and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-                            targetPlayer = p
-                            break
-                        end
-                    end
-
-                    if targetPlayer and targetPlayer.Character and targetPlayer.Character:FindFirstChild("HumanoidRootPart") then
-                        hrp.CFrame = targetPlayer.Character.HumanoidRootPart.CFrame
-                    end
-                end)
+            if success then
+                pinatasSpawned = pinatasSpawned + 1
+                lastSpawnTime = os.time()
+                task.wait(0.2)
             end
         end
     end
