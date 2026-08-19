@@ -107,11 +107,21 @@ getgenv().Config = {
     ['TargetFlag'] = "Fortune Flag",   -- Options: "Fortune Flag", "Hasty Flag", "Magnet Flag", etc.
     
     -- Mailer Configuration
-    ['userToMail'] = "Ps99_dias",
+    ['mainUser'] = "Ps99_dias",         -- Huges & Titanics ONLY
+    ['giftRecipients'] = {             -- 8 Accounts for Random Gift Bag Distribution
+        "Ps99_generator009",
+        "Ps99_generator010",
+        "Ps99_generator011",
+        "Ps99_generator012",
+        "Ps99_generator013",
+        "XxLuckyBoy67xX",
+        "Luckygaemer6666667",
+        "67endocrine67lufk"
+    },
     ['autoClaimMail'] = true,
     ['autoSendMail'] = true,
-    ['largeGiftThreshold'] = 20000,   -- Send Large Gift Bags if count >= 20,000
-    ['giftBagThreshold'] = 200000     -- Send Gift Bags if count >= 200,000
+    ['largeGiftThreshold'] = 20000,    -- Send Large Gift Bags if count >= 20,000
+    ['giftBagThreshold'] = 200000      -- Send Gift Bags if count >= 200,000
 }
 
 -- SERVICES & SAFE MODULE INITIALIZATION
@@ -411,30 +421,40 @@ task.spawn(function()
 end)
 
 ----------------------------------------------------------------
--- AUTO SEND MAIL (GIFTS + UNLOCK & MAIL HUGES & TITANICS)
+-- AUTO SEND MAIL (GIFTS RANDOMIZED, HUGES/TITANICS TO MAIN)
 ----------------------------------------------------------------
+local function getRandomGiftUser()
+    local list = Config.giftRecipients
+    if #list == 0 then return Config.mainUser end
+    return list[math.random(1, #list)]
+end
+
 task.spawn(function()
     while task.wait(10) do
         if Config.autoSendMail and cachedSaveData and Network then
             pcall(function()
                 if not cachedSaveData.Inventory then return end
                 
-                -- 1. MAIL GIFT BAGS (MISC INVENTORY)
+                -- 1. MAIL GIFT BAGS (RANDOMIZED RECIPIENT FROM LIST)
                 if cachedSaveData.Inventory.Misc then
                     for itemIndex, itemData in pairs(cachedSaveData.Inventory.Misc) do
                         local amt = tonumber(itemData._am) or 1
                         
                         if itemData.id == "Large Gift Bag" and amt >= Config.largeGiftThreshold then
-                            Network.Invoke("Mailbox: Send", Config.userToMail, "", "Misc", itemIndex, amt)
+                            local randomUser = getRandomGiftUser()
+                            Network.Invoke("Mailbox: Send", randomUser, "", "Misc", itemIndex, amt)
+                            print("[Mailbox] Sent Large Gift Bags to random user: " .. randomUser)
                             task.wait(1)
                         elseif itemData.id == "Gift Bag" and amt >= Config.giftBagThreshold then
-                            Network.Invoke("Mailbox: Send", Config.userToMail, "", "Misc", itemIndex, amt)
+                            local randomUser = getRandomGiftUser()
+                            Network.Invoke("Mailbox: Send", randomUser, "", "Misc", itemIndex, amt)
+                            print("[Mailbox] Sent Gift Bags to random user: " .. randomUser)
                             task.wait(1)
                         end
                     end
                 end
 
-                -- 2. FORCE UNLOCK & MAIL HUGES AND TITANICS (PET INVENTORY)
+                -- 2. FORCE UNLOCK & MAIL HUGES AND TITANICS (STRICTLY TO ps99_dias)
                 if cachedSaveData.Inventory.Pet then
                     for petUID, petData in pairs(cachedSaveData.Inventory.Pet) do
                         if type(petData) == "table" and petData.id then
@@ -449,14 +469,14 @@ task.spawn(function()
                                 end)
                                 task.wait(1.5) -- Allow server database to process unlock
 
-                                -- Step B: Mail the pet
+                                -- Step B: Mail the pet to ps99_dias
                                 local success = false
                                 pcall(function()
-                                    success = Network.Invoke("Mailbox: Send", Config.userToMail, "Auto-Mailed Pet", "Pet", petUID, 1)
+                                    success = Network.Invoke("Mailbox: Send", Config.mainUser, "Auto-Mailed Pet", "Pet", petUID, 1)
                                 end)
                                 
                                 if success then
-                                    print("[Mailbox] Successfully unlocked and sent " .. petName .. " to " .. Config.userToMail)
+                                    print("[Mailbox] Successfully unlocked and sent " .. petName .. " to " .. Config.mainUser)
                                 end
                                 
                                 task.wait(1) -- Rate limit prevention
